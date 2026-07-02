@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { directorAgent } from '@features/agents/lib/director-agent';
+import { frontendOrchestrator } from '@features/agents/lib/frontend-orchestrator';
 import { audioMixer } from '@shared/services/audio-service/mixer';
 import { radioMonitor, AgentStatus, ScriptEvent, LogEvent } from '@shared/services/monitor-service';
 import { ShowTimeline } from '@shared/types/radio-core';
@@ -29,6 +29,8 @@ export function useRadioPlayer(): RadioPlayerState & RadioPlayerActions & {
 
     // 连接状态
     const [isConnected, setIsConnected] = useState(false);
+    const [orchestrationHealth, setOrchestrationHealth] = useState<'ready' | 'degraded' | 'error'>('ready');
+    const [orchestrationMessage, setOrchestrationMessage] = useState('System ready');
 
     const timelineScrollRef = useRef<HTMLDivElement>(null);
     const currentBlockIdRef = useRef<string | null>(null);
@@ -134,9 +136,13 @@ export function useRadioPlayer(): RadioPlayerState & RadioPlayerActions & {
     // 统一播放控制
     const togglePlayback = useCallback(async () => {
         if (isPlaying) {
-            directorAgent.pauseShow();
-            setIsPlaying(false);
-            setIsInitializing(false);
+            const pauseResult = frontendOrchestrator.pause();
+            setOrchestrationHealth(pauseResult.state.health);
+            setOrchestrationMessage(pauseResult.state.message);
+            if (pauseResult.success) {
+                setIsPlaying(false);
+                setIsInitializing(false);
+            }
         } else {
             if (!isConnected) {
                 setIsInitializing(true);
@@ -146,25 +152,38 @@ export function useRadioPlayer(): RadioPlayerState & RadioPlayerActions & {
                 try {
                     // Safety timeout: force stop initializing after 3s if agent hangs
                     setTimeout(() => setIsInitializing(false), 3000);
-                    await directorAgent.startShow({});
-                } catch (error) {
-                    console.error("Failed to start:", error);
+                    const startResult = await frontendOrchestrator.start();
+                    setOrchestrationHealth(startResult.state.health);
+                    setOrchestrationMessage(startResult.state.message);
+                    if (!startResult.success) {
+                        setIsConnected(false);
+                        setIsPlaying(false);
+                    }
+                } catch {
+                    setOrchestrationHealth('error');
+                    setOrchestrationMessage('Unexpected playback startup failure');
                     setIsConnected(false);
                     setIsPlaying(false);
-                }
+                } 
                 setIsInitializing(false);
             } else {
-                directorAgent.resumeShow();
-                setIsPlaying(true);
+                const resumeResult = frontendOrchestrator.resume();
+                setOrchestrationHealth(resumeResult.state.health);
+                setOrchestrationMessage(resumeResult.state.message);
+                if (resumeResult.success) {
+                    setIsPlaying(true);
+                }
             }
         }
     }, [isPlaying, isConnected]);
 
     // 断开连接
     const disconnect = useCallback(() => {
+        const stopResult = frontendOrchestrator.stop();
+        setOrchestrationHealth(stopResult.state.health);
+        setOrchestrationMessage(stopResult.state.message);
         setIsConnected(false);
         setIsPlaying(false);
-        directorAgent.stopShow();
         setCurrentScript(null);
         setCurrentBlockId(null);
         setAgentStatuses({});
@@ -191,7 +210,9 @@ export function useRadioPlayer(): RadioPlayerState & RadioPlayerActions & {
 
         if (actualIndex >= 0) {
             console.log(`[jumpToBlock] UI index: ${uiIndex} -> Actual index: ${actualIndex}, block: ${targetBlock.id}`);
-            directorAgent.skipToBlock(actualIndex);
+            const jumpResult = frontendOrchestrator.jumpToBlock(actualIndex);
+            setOrchestrationHealth(jumpResult.state.health);
+            setOrchestrationMessage(jumpResult.state.message);
         } else {
             console.warn('[jumpToBlock] Block not found in current timeline:', targetBlock.id);
         }
@@ -229,6 +250,8 @@ export function useRadioPlayer(): RadioPlayerState & RadioPlayerActions & {
         userMessage,
         showTimeline,
         pendingMailCount,
+        orchestrationHealth,
+        orchestrationMessage,
         // Actions
         togglePlayback,
         disconnect,

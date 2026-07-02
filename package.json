@@ -1,12 +1,16 @@
 {
-  "name": "radio-nowhere",
+  "name": "aetherwave",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:acceptance": "vitest run src/shared/services/provider/provider.test.ts src/shared/services/health-service/health-service.test.ts src/features/agents/lib/frontend-orchestrator.test.ts src/features/content/lib/cast-system.test.ts src/features/content/lib/timeline-constraints.test.ts src/features/content/lib/writer-tools.test.ts",
+    "check:acceptance": "pnpm lint && pnpm test:acceptance && pnpm build"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
@@ -28,7 +32,9 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.1.1",
+    "jsdom": "^26.1.0",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^2.1.8"
   }
 }

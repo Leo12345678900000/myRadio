@@ -5,11 +5,26 @@
   --foreground: #ededed;
 }
 
+html[data-theme="dark"] {
+  --background: #050505;
+  --foreground: #ededed;
+}
+
+html[data-theme="neon"] {
+  --background: #080414;
+  --foreground: #f5f5ff;
+}
+
+html[data-theme="minimal"] {
+  --background: #121212;
+  --foreground: #f3f3f3;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
 html,

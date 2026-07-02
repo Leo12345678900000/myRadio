@@ -2,11 +2,18 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { getSettings, saveSettings, IApiSettings, ApiType, DEFAULT_SETTINGS } from '@shared/services/storage-service/settings';
-import { testConnection, fetchModels } from '@shared/services/ai-service';
-import { SettingsPanelState, SettingsPanelActions, TestStatus } from '../types';
+import { testConnection, fetchModels, fetchOfficialModels } from '@shared/services/ai-service';
+import { checkOfficialBackendHealth, checkOllamaHealth, checkProxyHealth, checkSupabaseHealth } from '@shared/services/health-service';
+import { SettingsPanelState, SettingsPanelActions, TestStatus, HealthCheckState } from '../types';
 
 // Constants
 const MS_TTS_DEFAULT_TOKEN = 'tetr5354';
+const DEFAULT_HEALTH_STATE: HealthCheckState = {
+    proxy: { status: "idle", message: "Not checked" },
+    officialBackend: { status: "idle", message: "Not checked" },
+    supabase: { status: "idle", message: "Not checked" },
+    ollama: { status: "idle", message: "Not checked" },
+};
 
 export function useSettingsPanel(isOpen: boolean): SettingsPanelState & SettingsPanelActions {
     const [settings, setSettings] = useState<IApiSettings>(DEFAULT_SETTINGS);
@@ -20,6 +27,7 @@ export function useSettingsPanel(isOpen: boolean): SettingsPanelState & Settings
 
     const [ttsTestStatus, setTtsTestStatus] = useState<TestStatus>("idle");
     const [ttsTestMessage, setTtsTestMessage] = useState("");
+    const [healthChecks, setHealthChecks] = useState<HealthCheckState>(DEFAULT_HEALTH_STATE);
 
     // Load settings on mount
     useEffect(() => {
@@ -32,22 +40,37 @@ export function useSettingsPanel(isOpen: boolean): SettingsPanelState & Settings
                 setSaved(false);
                 setModels([]);
                 setShowModelDropdown(false);
+                setHealthChecks(DEFAULT_HEALTH_STATE);
             }, 0);
         }
     }, [isOpen]);
 
     const handleFetchModels = useCallback(async () => {
-        if (!settings.endpoint || !settings.apiKey) return;
+        const isOfficialOllama = settings.runtimeMode === "live"
+            && settings.backendRoute === "official"
+            && settings.openSourceLlmProvider === "ollama";
+
+        if (!isOfficialOllama && settings.runtimeMode === "live" && !settings.apiKey) return;
 
         setLoadingModels(true);
-        const modelList = await fetchModels(settings.endpoint, settings.apiKey, settings.apiType);
+        const modelList = isOfficialOllama
+            ? await fetchOfficialModels(settings.officialBackendUrl)
+            : await fetchModels(settings.endpoint, settings.apiKey, settings.apiType);
         setModels(modelList);
         setLoadingModels(false);
 
         if (modelList.length > 0) {
             setShowModelDropdown(true);
         }
-    }, [settings.endpoint, settings.apiKey, settings.apiType]);
+    }, [
+        settings.endpoint,
+        settings.apiKey,
+        settings.apiType,
+        settings.runtimeMode,
+        settings.backendRoute,
+        settings.openSourceLlmProvider,
+        settings.officialBackendUrl,
+    ]);
 
     const handleSave = useCallback(() => {
         saveSettings(settings);
@@ -196,6 +219,29 @@ export function useSettingsPanel(isOpen: boolean): SettingsPanelState & Settings
         setShowModelDropdown(false);
     }, [handleChange]);
 
+    const handleCheckHealth = useCallback(async () => {
+        setHealthChecks({
+            proxy: { status: "checking", message: "Checking..." },
+            officialBackend: { status: "checking", message: "Checking..." },
+            supabase: { status: "checking", message: "Checking..." },
+            ollama: { status: "checking", message: "Checking..." },
+        });
+
+        const [proxy, officialBackend, supabase, ollama] = await Promise.all([
+            checkProxyHealth(),
+            checkOfficialBackendHealth(settings),
+            checkSupabaseHealth(settings),
+            checkOllamaHealth(settings),
+        ]);
+
+        setHealthChecks({
+            proxy: { status: proxy.status, message: proxy.message },
+            officialBackend: { status: officialBackend.status, message: officialBackend.message },
+            supabase: { status: supabase.status, message: supabase.message },
+            ollama: { status: ollama.status, message: ollama.message },
+        });
+    }, [settings]);
+
     return {
         // State
         settings,
@@ -207,6 +253,7 @@ export function useSettingsPanel(isOpen: boolean): SettingsPanelState & Settings
         showModelDropdown,
         ttsTestStatus,
         ttsTestMessage,
+        healthChecks,
         // Actions
         handleChange,
         handleSave,
@@ -215,5 +262,6 @@ export function useSettingsPanel(isOpen: boolean): SettingsPanelState & Settings
         handleTtsTest,
         handleSelectModel,
         setShowModelDropdown,
+        handleCheckHealth,
     };
 }

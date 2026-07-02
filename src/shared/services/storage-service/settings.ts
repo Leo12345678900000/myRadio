@@ -6,6 +6,10 @@ const STORAGE_KEY = "radio_nowhere_settings";
 
 export type ApiType = "openai" | "gemini" | "vertexai";
 export type TTSProvider = "gemini" | "microsoft";
+export type RuntimeMode = "demo" | "live";
+export type BackendRoute = "direct" | "proxy" | "official";
+export type OpenSourceLlmProvider = "none" | "ollama";
+export type UITheme = "dark" | "neon" | "minimal";
 
 export interface IApiSettings {
     endpoint: string;      // API base URL (e.g., https://api.openai.com)
@@ -35,6 +39,23 @@ export interface IApiSettings {
 
     // 播放配置
     preloadBlockCount: number;  // 提前准备的 block 数量 (推荐: 5)
+
+    // 运行模式与后端路由
+    runtimeMode: RuntimeMode;
+    backendRoute: BackendRoute;
+    officialBackendUrl: string;
+
+    // Supabase (open-source backend)
+    supabaseUrl: string;
+    supabaseAnonKey: string;
+
+    // Open-source LLM backend
+    openSourceLlmProvider: OpenSourceLlmProvider;
+    ollamaBaseUrl: string;
+    ollamaModel: string;
+
+    // UI Theme
+    uiTheme: UITheme;
 }
 
 export const DEFAULT_SETTINGS: IApiSettings = {
@@ -60,6 +81,19 @@ export const DEFAULT_SETTINGS: IApiSettings = {
     msTtsAuthKey: "",
     // 播放配置
     preloadBlockCount: 3,
+    // 运行模式与后端路由
+    runtimeMode: "live",
+    backendRoute: "direct",
+    officialBackendUrl: "http://localhost:8000",
+    // Supabase
+    supabaseUrl: "",
+    supabaseAnonKey: "",
+    // Open-source LLM backend
+    openSourceLlmProvider: "none",
+    ollamaBaseUrl: "http://localhost:11434",
+    ollamaModel: "qwen2.5:7b",
+    // UI Theme
+    uiTheme: "dark",
 };
 
 // 可用的 TTS 语音列表
@@ -112,6 +146,16 @@ export function getSettings(): IApiSettings {
             msTtsAuthKey: parsed.msTtsAuthKey ?? DEFAULT_SETTINGS.msTtsAuthKey,
             // 播放配置
             preloadBlockCount: parsed.preloadBlockCount ?? DEFAULT_SETTINGS.preloadBlockCount,
+            // 运行模式与后端路由
+            runtimeMode: parsed.runtimeMode ?? DEFAULT_SETTINGS.runtimeMode,
+            backendRoute: parsed.backendRoute ?? DEFAULT_SETTINGS.backendRoute,
+            officialBackendUrl: parsed.officialBackendUrl ?? DEFAULT_SETTINGS.officialBackendUrl,
+            supabaseUrl: parsed.supabaseUrl ?? DEFAULT_SETTINGS.supabaseUrl,
+            supabaseAnonKey: parsed.supabaseAnonKey ?? DEFAULT_SETTINGS.supabaseAnonKey,
+            openSourceLlmProvider: parsed.openSourceLlmProvider ?? DEFAULT_SETTINGS.openSourceLlmProvider,
+            ollamaBaseUrl: parsed.ollamaBaseUrl ?? DEFAULT_SETTINGS.ollamaBaseUrl,
+            ollamaModel: parsed.ollamaModel ?? DEFAULT_SETTINGS.ollamaModel,
+            uiTheme: parsed.uiTheme ?? DEFAULT_SETTINGS.uiTheme,
         };
     } catch (e) {
         console.error("Failed to parse settings:", e);
@@ -129,6 +173,9 @@ export function saveSettings(settings: IApiSettings): void {
 
     try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+        if (typeof window !== "undefined") {
+            window.dispatchEvent(new Event("radio-settings-changed"));
+        }
     } catch (e) {
         console.error("Failed to save settings:", e);
     }
@@ -157,6 +204,10 @@ export function clearSettings(): void {
  */
 export function isConfigured(): boolean {
     const settings = getSettings();
+
+    if (settings.runtimeMode === "demo") {
+        return true;
+    }
 
     // 所有类型都需要 apiKey
     if (!settings.apiKey) {

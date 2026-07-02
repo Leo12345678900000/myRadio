@@ -1,14 +1,14 @@
 /**
- * Radio Nowhere - 全局常量配置
+ * AetherWave - 全局常量配置
  * 所有可调参数集中管理
  */
 
 // ================== 电台配置 ==================
 
 export const RADIO = {
-    NAME: 'NOWHERE',                  // 电台名称
-    FREQUENCY: 'FM 404.2',            // 电台频率
-    SLOGAN: '无处不在的陪伴',           // 电台口号
+    NAME: 'AETHERWAVE',
+    FREQUENCY: 'FM 404.2',
+    SLOGAN: 'Multi-Agent Frontend Studio',
 };
 
 // ================== 节目时长配置 ==================

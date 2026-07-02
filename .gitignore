@@ -39,3 +39,18 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# python
+backend/fastapi/.venv/
+__pycache__/
+*.py[cod]
+
+# local-only documentation (keep on disk, do not push)
+/docs/
+/FRONTEND_REWRITE_REQUIREMENTS.md
+/GITHUB_PUSH_REQUIREMENTS.md
+/DEV_TODO.md
+/OPTIMIZATION_ROADMAP.md
+/REPAIR_REPORT.md
+/backend/fastapi/README.md
+/scripts/release-package.ps1

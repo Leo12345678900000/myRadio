@@ -1,5 +1,6 @@
 import { TimelineBlock, PlayerState } from '@shared/types/radio-core';
 import { AgentStatus, ScriptEvent, LogEvent } from '@shared/services/monitor-service';
+import { OrchestratorHealth } from '@features/agents/lib/frontend-orchestrator';
 
 // Extended TimelineBlock with history marker
 export type ExtendedBlock = TimelineBlock & {
@@ -22,6 +23,8 @@ export interface RadioPlayerState {
     userMessage: string;
     showTimeline: boolean;
     pendingMailCount: number;
+    orchestrationHealth: OrchestratorHealth;
+    orchestrationMessage: string;
 }
 
 export interface RadioPlayerActions {

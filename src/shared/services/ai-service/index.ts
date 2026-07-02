@@ -1,6 +1,8 @@
 import { getSettings, isConfigured, ApiType } from "@shared/services/storage-service/settings";
 import { WORLD_BIBLE, IShowSegment } from "@features/content/lib/world-context";
 import { radioMonitor } from "@shared/services/monitor-service";
+import { getNetworkProvider } from "@shared/services/provider";
+import { recordApiCallResult } from "@shared/services/storage-service/local-stats";
 
 // ================== Interfaces ==================
 
@@ -23,6 +25,12 @@ interface GeminiResponse {
             parts: Array<{ text: string }>;
         };
     }>;
+}
+
+interface OfficialOllamaGenerateResponse {
+    text?: string;
+    response?: string;
+    error?: string;
 }
 
 // ================== Helper Functions ==================
@@ -89,6 +97,46 @@ function getActionFromUrl(url: string): string {
     return 'API Request';
 }
 
+function describeError(error: unknown): string {
+    if (error instanceof Error) {
+        return error.message || error.name;
+    }
+    return String(error);
+}
+
+function isOfficialOllamaEnabled(): boolean {
+    const settings = getSettings();
+    return settings.runtimeMode === "live"
+        && settings.backendRoute === "official"
+        && settings.openSourceLlmProvider === "ollama";
+}
+
+async function callOfficialOllama(options: GenerativeAIOptions): Promise<string | null> {
+    const settings = getSettings();
+    const endpoint = settings.officialBackendUrl.replace(/\/$/, "");
+
+    const response = await fetch(`${endpoint}/api/llm/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            prompt: options.prompt,
+            model: settings.ollamaModel || settings.modelName,
+            temperature: options.temperature ?? 0.7,
+            max_tokens: options.maxOutputTokens ?? 2048,
+            ollama_base_url: settings.ollamaBaseUrl,
+        }),
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Official Ollama API Error:", response.status, errorText);
+        return null;
+    }
+
+    const data = await response.json() as OfficialOllamaGenerateResponse;
+    return data.text || data.response || null;
+}
+
 /**
  * 发送 API 请求（直接调用，如失败则尝试代理）
  */
@@ -96,53 +144,38 @@ export async function apiFetch(
     url: string,
     options: { method: string; headers: Record<string, string>; body?: unknown; signal?: AbortSignal }
 ): Promise<Response> {
-    const fetchOptions: RequestInit = {
-        method: options.method,
-        headers: options.headers,
-        signal: options.signal,
-    };
-
-    if (options.body && options.method !== 'GET') {
-        fetchOptions.body = JSON.stringify(options.body);
-    }
-
+    const settings = getSettings();
+    const provider = getNetworkProvider(settings);
     const service = getServiceFromUrl(url);
     const action = getActionFromUrl(url);
     const callId = radioMonitor.startApiCall(service, action);
 
     try {
-        // 尝试直接调用
-        const response = await fetch(url, fetchOptions);
-        radioMonitor.endApiCall(callId, response.ok, response.ok ? undefined : `${response.status}`);
+        const response = await provider.request({
+            url,
+            method: options.method,
+            headers: options.headers,
+            body: options.body,
+            signal: options.signal,
+        });
+        const routeTag = settings.runtimeMode === "demo"
+            ? "demo"
+            : settings.backendRoute === "official"
+                ? "official-backend"
+                : settings.backendRoute;
+        radioMonitor.endApiCall(callId, response.ok, response.ok ? routeTag : `${response.status} via ${routeTag}`);
+        recordApiCallResult(response.ok);
         return response;
-    } catch (directError) {
-        // 如果是中止信号导致的错误，直接抛出
+    } catch (error) {
+        const reason = describeError(error).slice(0, 120);
         if (options.signal?.aborted) {
             radioMonitor.endApiCall(callId, false, 'aborted');
-            throw directError;
+            recordApiCallResult(false);
+            throw error;
         }
-
-        console.log("Direct fetch failed, trying proxy...", directError);
-        // fallback 到代理
-        try {
-            const response = await fetch('/api/proxy', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    url,
-                    method: options.method,
-                    headers: options.headers,
-                    body: options.body
-                }),
-                signal: options.signal,
-            });
-            radioMonitor.endApiCall(callId, response.ok, 'via proxy');
-            return response;
-        } catch (proxyError) {
-            console.error("Proxy also failed:", proxyError);
-            radioMonitor.endApiCall(callId, false, 'failed');
-            throw directError; // 抛出原始错误
-        }
+        radioMonitor.endApiCall(callId, false, `failed: ${reason}`);
+        recordApiCallResult(false);
+        throw error;
     }
 }
 
@@ -159,6 +192,15 @@ export interface GenerativeAIOptions {
  * 自动处理 OpenAI / Gemini / Vertex AI 三种格式
  */
 export async function callGenerativeAI(options: GenerativeAIOptions): Promise<string | null> {
+    if (isOfficialOllamaEnabled()) {
+        try {
+            return await callOfficialOllama(options);
+        } catch (error) {
+            console.error("callOfficialOllama error:", error);
+            return null;
+        }
+    }
+
     const settings = getSettings();
     const { prompt, temperature = 0.7, maxOutputTokens = 2048 } = options;
 
@@ -395,6 +437,21 @@ export async function testConnection(): Promise<{ success: boolean; message: str
     }
 
     const settings = getSettings();
+
+    if (isOfficialOllamaEnabled()) {
+        try {
+            const endpoint = settings.officialBackendUrl.replace(/\/$/, "");
+            const response = await fetch(`${endpoint}/api/llm/models`, { method: "GET" });
+            if (!response.ok) {
+                const errorText = await response.text();
+                return { success: false, message: `Ollama backend error: ${response.status} - ${errorText.slice(0, 100)}` };
+            }
+            return { success: true, message: "✅ Official Ollama backend connection successful!" };
+        } catch (error) {
+            return { success: false, message: `Ollama backend failed: ${describeError(error)}` };
+        }
+    }
+
     // 使用默认 Gemini endpoint 如果未设置
     const endpoint = settings.endpoint ||
         (settings.apiType === 'gemini' ? 'https://generativelanguage.googleapis.com' : '');
@@ -480,7 +537,7 @@ export async function testConnection(): Promise<{ success: boolean; message: str
             }
         }
     } catch (error) {
-        return { success: false, message: `Connection failed: ${error}` };
+        return { success: false, message: `Connection failed: ${describeError(error)}` };
     }
 }
 
@@ -529,6 +586,32 @@ export async function fetchModels(endpoint: string, apiKey: string, apiType: Api
         return [];
     } catch (error) {
         console.error("Error fetching models:", error);
+        return [];
+    }
+}
+
+export async function fetchOfficialModels(officialBackendUrl: string): Promise<string[]> {
+    if (!officialBackendUrl) {
+        return [];
+    }
+
+    try {
+        const endpoint = officialBackendUrl.replace(/\/$/, "");
+        const response = await fetch(`${endpoint}/api/llm/models`, { method: "GET" });
+        if (!response.ok) {
+            return [];
+        }
+
+        const data = await response.json();
+        if (Array.isArray(data.models)) {
+            return data.models
+                .map((model: { name?: string; model?: string }) => model.name || model.model)
+                .filter((value: string | undefined): value is string => Boolean(value))
+                .sort((a: string, b: string) => a.localeCompare(b));
+        }
+
+        return [];
+    } catch {
         return [];
     }
 }

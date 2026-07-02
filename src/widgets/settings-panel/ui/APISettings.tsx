@@ -2,9 +2,9 @@
 
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { AlertCircle, RefreshCw, ChevronDown, Loader2, CheckCircle } from 'lucide-react';
-import { IApiSettings, ApiType } from '@shared/services/storage-service/settings';
-import { TestStatus } from '../types';
+import { AlertCircle, RefreshCw, ChevronDown, Loader2, CheckCircle, Activity } from 'lucide-react';
+import { IApiSettings, ApiType, RuntimeMode, BackendRoute, OpenSourceLlmProvider } from '@shared/services/storage-service/settings';
+import { TestStatus, HealthCheckState, HealthCheckStatus } from '../types';
 
 interface APISettingsProps {
     settings: IApiSettings;
@@ -13,10 +13,12 @@ interface APISettingsProps {
     models: string[];
     loadingModels: boolean;
     showModelDropdown: boolean;
+    healthChecks: HealthCheckState;
     onSettingChange: (field: keyof IApiSettings, value: string | boolean | number) => void;
     onFetchModels: () => void;
     onSelectModel: (model: string) => void;
     onToggleDropdown: (show: boolean) => void;
+    onCheckHealth: () => Promise<void>;
 }
 
 export default function APISettings({
@@ -26,13 +28,173 @@ export default function APISettings({
     models,
     loadingModels,
     showModelDropdown,
+    healthChecks,
     onSettingChange,
     onFetchModels,
     onSelectModel,
     onToggleDropdown,
+    onCheckHealth,
 }: APISettingsProps) {
+    const isOfficialOllama = settings.runtimeMode === "live"
+        && settings.backendRoute === "official"
+        && settings.openSourceLlmProvider === "ollama";
+
+    const fetchDisabled = loadingModels ||
+        (!isOfficialOllama && settings.runtimeMode === 'live' && !settings.apiKey) ||
+        (!isOfficialOllama && settings.runtimeMode === 'live' && settings.apiType !== 'vertexai' && !settings.endpoint);
+
+    const statusTextClass = (status: HealthCheckStatus): string => {
+        if (status === "ok") return "text-emerald-400";
+        if (status === "checking") return "text-amber-300";
+        if (status === "error") return "text-red-400";
+        return "text-neutral-500";
+    };
+
     return (
         <div className="space-y-5">
+            {/* Runtime Mode */}
+            <div className="space-y-2">
+                <label className="text-sm font-medium text-neutral-400">Runtime Mode</label>
+                <div className="flex gap-2">
+                    {(["demo", "live"] as RuntimeMode[]).map((mode) => (
+                        <button
+                            key={mode}
+                            onClick={() => onSettingChange("runtimeMode", mode)}
+                            className={`flex-1 px-4 py-2.5 rounded-xl font-medium text-sm transition-all ${settings.runtimeMode === mode
+                                ? "bg-cyan-600 text-white"
+                                : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700"
+                                }`}
+                        >
+                            {mode === "demo" ? "Demo (No Key)" : "Live"}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            {/* Backend Route */}
+            <div className="space-y-2">
+                <label className="text-sm font-medium text-neutral-400">Backend Route</label>
+                <div className="grid grid-cols-3 gap-2">
+                    {(["direct", "proxy", "official"] as BackendRoute[]).map((route) => (
+                        <button
+                            key={route}
+                            onClick={() => onSettingChange("backendRoute", route)}
+                            className={`px-3 py-2 rounded-xl font-medium text-xs transition-all ${settings.backendRoute === route
+                                ? "bg-violet-600 text-white"
+                                : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700"
+                                }`}
+                        >
+                            {route}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-neutral-400">Connectivity Health</label>
+                    <button
+                        onClick={onCheckHealth}
+                        className="flex items-center gap-1 text-xs text-cyan-400 hover:text-cyan-300 transition-colors"
+                    >
+                        <Activity size={12} />
+                        Check
+                    </button>
+                </div>
+                <div className="rounded-xl border border-neutral-800 bg-neutral-900/60 p-3 space-y-2 text-xs">
+                    <p className={statusTextClass(healthChecks.proxy.status)}>
+                        Proxy: {healthChecks.proxy.message}
+                    </p>
+                    <p className={statusTextClass(healthChecks.officialBackend.status)}>
+                        Official Backend: {healthChecks.officialBackend.message}
+                    </p>
+                    <p className={statusTextClass(healthChecks.supabase.status)}>
+                        Supabase: {healthChecks.supabase.message}
+                    </p>
+                    <p className={statusTextClass(healthChecks.ollama.status)}>
+                        Ollama: {healthChecks.ollama.message}
+                    </p>
+                </div>
+            </div>
+
+            <div className="space-y-2">
+                <label className="text-sm font-medium text-neutral-400">Open-source LLM</label>
+                <div className="grid grid-cols-2 gap-2">
+                    {(["none", "ollama"] as OpenSourceLlmProvider[]).map((provider) => (
+                        <button
+                            key={provider}
+                            onClick={() => onSettingChange("openSourceLlmProvider", provider)}
+                            className={`px-3 py-2 rounded-xl font-medium text-xs transition-all ${settings.openSourceLlmProvider === provider
+                                ? "bg-indigo-600 text-white"
+                                : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700"
+                                }`}
+                        >
+                            {provider}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            {settings.openSourceLlmProvider === "ollama" && (
+                <>
+                    <div className="space-y-2">
+                        <label className="text-sm font-medium text-neutral-400">Ollama Base URL</label>
+                        <input
+                            type="text"
+                            value={settings.ollamaBaseUrl}
+                            onChange={(e) => onSettingChange("ollamaBaseUrl", e.target.value)}
+                            placeholder="http://localhost:11434"
+                            className="w-full px-4 py-3 bg-neutral-800 border border-neutral-700 rounded-xl text-white placeholder-neutral-500 focus:outline-none focus:border-indigo-500 transition-colors"
+                        />
+                    </div>
+                    <div className="space-y-2">
+                        <label className="text-sm font-medium text-neutral-400">Ollama Model</label>
+                        <input
+                            type="text"
+                            value={settings.ollamaModel}
+                            onChange={(e) => onSettingChange("ollamaModel", e.target.value)}
+                            placeholder="qwen2.5:7b"
+                            className="w-full px-4 py-3 bg-neutral-800 border border-neutral-700 rounded-xl text-white placeholder-neutral-500 focus:outline-none focus:border-indigo-500 transition-colors"
+                        />
+                    </div>
+                </>
+            )}
+
+            {settings.backendRoute === "official" && (
+                <div className="space-y-2">
+                    <label className="text-sm font-medium text-neutral-400">Official Backend URL</label>
+                    <input
+                        type="text"
+                        value={settings.officialBackendUrl}
+                        onChange={(e) => onSettingChange("officialBackendUrl", e.target.value)}
+                        placeholder="http://localhost:8000"
+                        className="w-full px-4 py-3 bg-neutral-800 border border-neutral-700 rounded-xl text-white placeholder-neutral-500 focus:outline-none focus:border-cyan-500 transition-colors"
+                    />
+                </div>
+            )}
+
+            <div className="space-y-2">
+                <label className="text-sm font-medium text-neutral-400">Supabase URL (Optional)</label>
+                <input
+                    type="text"
+                    value={settings.supabaseUrl}
+                    onChange={(e) => onSettingChange("supabaseUrl", e.target.value)}
+                    placeholder="https://YOUR_PROJECT.supabase.co"
+                    className="w-full px-4 py-3 bg-neutral-800 border border-neutral-700 rounded-xl text-white placeholder-neutral-500 focus:outline-none focus:border-cyan-500 transition-colors"
+                />
+            </div>
+
+            <div className="space-y-2">
+                <label className="text-sm font-medium text-neutral-400">Supabase Anon Key (Optional)</label>
+                <input
+                    type="password"
+                    value={settings.supabaseAnonKey}
+                    onChange={(e) => onSettingChange("supabaseAnonKey", e.target.value)}
+                    placeholder="eyJ..."
+                    className="w-full px-4 py-3 bg-neutral-800 border border-neutral-700 rounded-xl text-white placeholder-neutral-500 focus:outline-none focus:border-cyan-500 transition-colors"
+                />
+            </div>
+
             {/* API Type Selector */}
             <div className="space-y-2">
                 <label className="text-sm font-medium text-neutral-400">API Type</label>
@@ -131,7 +293,7 @@ export default function APISettings({
                     <label className="text-sm font-medium text-neutral-400">Model Name</label>
                     <button
                         onClick={onFetchModels}
-                        disabled={!settings.endpoint || !settings.apiKey || loadingModels}
+                        disabled={fetchDisabled}
                         className="flex items-center gap-1 text-xs text-emerald-500 hover:text-emerald-400 disabled:text-neutral-600 disabled:cursor-not-allowed transition-colors"
                     >
                         <RefreshCw size={12} className={loadingModels ? "animate-spin" : ""} />

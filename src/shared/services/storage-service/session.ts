@@ -4,6 +4,8 @@
  */
 
 import { ShowTimeline } from '@shared/types/radio-core';
+import { getSettings } from './settings';
+import { upsertSessionRecord } from '@shared/services/supabase-service';
 
 const SESSION_KEY = 'radio_nowhere_session';
 const PLAYLIST_KEY = 'radio_nowhere_playlists';
@@ -45,6 +47,20 @@ export function saveSession(session: Omit<RadioSession, 'savedAt'>): void {
     try {
         localStorage.setItem(SESSION_KEY, JSON.stringify(fullSession));
         console.log('[Session] Saved session:', session.id, 'block:', session.currentBlockIndex);
+
+        const settings = getSettings();
+        if (settings.runtimeMode === 'live') {
+            void upsertSessionRecord({
+                session_id: fullSession.id,
+                runtime_mode: settings.runtimeMode,
+                current_block_index: fullSession.currentBlockIndex,
+                playback_position: fullSession.playbackPosition,
+                timeline_snapshot: fullSession.timeline,
+                saved_at: new Date(fullSession.savedAt).toISOString(),
+            }).catch((syncError) => {
+                console.warn('[Session] Supabase sync skipped:', syncError);
+            });
+        }
     } catch (error) {
         console.error('[Session] Failed to save:', error);
     }

@@ -1,40 +1,28 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import PwaRegistrar from "@shared/ui/pwa-registrar";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+import ThemeSync from "@shared/ui/theme-sync";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://radionowhere.cjack.top"),
   title: {
-    template: "%s | Radio Nowhere",
-    default: "Radio Nowhere",
+    template: "%s | AetherWave",
+    default: "AetherWave",
   },
-  description: "The Frequency of the Lost. A real-time AI generated radio station broadcasting from an alternate reality.",
-  keywords: ["AI Radio", "Generative Audio", "Music", "Radio Nowhere", "Sci-Fi", "Roleplay"],
+  description: "A frontend-first multi-agent AI studio with orchestration, provider routing, and open-source backend integration.",
+  keywords: ["AetherWave", "Multi-Agent", "Frontend", "AI", "Orchestrator", "Next.js"],
   openGraph: {
-    title: "Radio Nowhere",
-    description: "The Frequency of the Lost. A real-time AI generated radio station.",
-    url: "https://radionowhere.cjack.top",
-    siteName: "Radio Nowhere",
+    title: "AetherWave",
+    description: "Frontend-first multi-agent AI studio for interview demos.",
+    siteName: "AetherWave",
     images: [
       {
         url: "/icon.png",
         width: 512,
         height: 512,
-        alt: "Radio Nowhere Logo",
+        alt: "AetherWave Logo",
       },
     ],
-    locale: "en_US",
+    locale: "zh_CN",
     type: "website",
   },
   manifest: "/manifest.json",
@@ -55,10 +43,8 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-        suppressHydrationWarning
-      >
+      <body className="antialiased" suppressHydrationWarning>
+        <ThemeSync />
         <PwaRegistrar />
         {children}
       </body>

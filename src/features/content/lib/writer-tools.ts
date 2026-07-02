@@ -8,6 +8,7 @@ import { ShowTimeline } from '@shared/types/radio-core';
 import { getRecentConcepts, getRecentSongs, isDuplicateConcept, recordSong } from '@features/history-tracking/lib/history-manager';
 import { NEWS_SERVICE } from '@shared/utils/constants';
 import { analyzeDiversity, addProhibitedArtist } from '@features/music-search/lib/diversity-manager';
+import { apiFetch } from '@shared/services/ai-service';
 
 // ================== Tool Definitions ==================
 
@@ -256,15 +257,11 @@ async function executeFetchNews(count?: number): Promise<ToolResult> {
     try {
         const newsUrl = `${NEWS_SERVICE.API_URL}?key=${NEWS_SERVICE.API_KEY}`;
 
-        // 通过代理调用，避免 CORS
-        const response = await fetch('/api/proxy', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                url: newsUrl,
-                method: 'GET',
-                headers: { 'Accept': 'application/json' }
-            })
+        const response = await apiFetch(newsUrl, {
+            method: 'GET',
+            headers: {
+                Accept: 'application/json',
+            },
         });
 
         if (!response.ok) {
@@ -303,16 +300,57 @@ async function executeSearchKnowledge(query: string, limit?: number): Promise<To
     }
 
     const safeLimit = Math.max(1, Math.min(limit || 3, 6));
+    const normalizedQuery = query.trim();
+
+    try {
+        const wikiUrl = `https://zh.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(normalizedQuery)}&limit=${safeLimit}&namespace=0&format=json`;
+        const response = await apiFetch(wikiUrl, {
+            method: 'GET',
+            headers: {
+                Accept: 'application/json',
+            },
+        });
+
+        if (response.ok) {
+            const data = await response.json() as [string, string[], string[], string[]];
+            const titles = Array.isArray(data?.[1]) ? data[1] : [];
+            const summaries = Array.isArray(data?.[2]) ? data[2] : [];
+            const links = Array.isArray(data?.[3]) ? data[3] : [];
+
+            const items = titles
+                .map((title, index) => ({
+                    title,
+                    summary: summaries[index] || `${title} 的基础背景与定义`,
+                    source: links[index] || 'https://zh.wikipedia.org',
+                }))
+                .filter(item => item.title && item.title.trim().length > 0)
+                .slice(0, safeLimit);
+
+            if (items.length > 0) {
+                return {
+                    success: true,
+                    data: {
+                        query: normalizedQuery,
+                        source: 'wikipedia_opensearch',
+                        items,
+                        note: '已从公开百科检索结果中提取结构化素材，可直接用于节目扩写。'
+                    }
+                };
+            }
+        }
+    } catch {
+        // 失败后降级到本地引导数据
+    }
 
     return {
         success: true,
         data: {
-            query,
+            query: normalizedQuery,
             source: 'local_fallback',
             items: [
-                { title: `${query} 的背景`, summary: '请在节目中解释该主题的起源、演化与现实意义。' },
-                { title: `${query} 的争议`, summary: '补充至少一个不同观点，避免单一立场叙述。' },
-                { title: `${query} 的延展`, summary: '结合听众生活场景给出可理解的类比。' }
+                { title: `${normalizedQuery} 的背景`, summary: '请在节目中解释该主题的起源、演化与现实意义。' },
+                { title: `${normalizedQuery} 的争议`, summary: '补充至少一个不同观点，避免单一立场叙述。' },
+                { title: `${normalizedQuery} 的延展`, summary: '结合听众生活场景给出可理解的类比。' }
             ].slice(0, safeLimit),
             note: '当前环境未接入稳定知识 API，已返回结构化引导结果。'
         }
@@ -322,6 +360,45 @@ async function executeSearchKnowledge(query: string, limit?: number): Promise<To
 async function executeFetchTrending(topic?: string, count?: number): Promise<ToolResult> {
     const safeCount = Math.max(1, Math.min(count || 5, 10));
     const normalizedTopic = (topic || '综合').trim() || '综合';
+
+    try {
+        const newsResult = await executeFetchNews(Math.min(Math.max(safeCount * 2, 6), 15));
+        const rawNews = (newsResult.data as { news?: unknown[] } | undefined)?.news;
+
+        if (newsResult.success && Array.isArray(rawNews) && rawNews.length > 0) {
+            const headlines = rawNews
+                .map((item) => {
+                    if (typeof item === 'string') return item;
+                    if (item && typeof item === 'object') {
+                        const candidate = item as { title?: string; name?: string; content?: string; summary?: string };
+                        return candidate.title || candidate.name || candidate.content || candidate.summary || '';
+                    }
+                    return '';
+                })
+                .map(text => text.trim())
+                .filter(Boolean);
+
+            const filtered = normalizedTopic === '综合'
+                ? headlines
+                : headlines.filter(line => line.toLowerCase().includes(normalizedTopic.toLowerCase()));
+
+            const selected = (filtered.length > 0 ? filtered : headlines).slice(0, safeCount);
+
+            if (selected.length > 0) {
+                return {
+                    success: true,
+                    data: {
+                        topic: normalizedTopic,
+                        items: selected,
+                        source: 'news_service',
+                        note: '热点来自今日新闻提取，可选择 1-2 条扩写为讨论话题。'
+                    }
+                };
+            }
+        }
+    } catch {
+        // 失败后降级
+    }
 
     return {
         success: true,
@@ -345,6 +422,7 @@ async function executeSearchQuotes(theme: string, count?: number): Promise<ToolR
     }
 
     const safeCount = Math.max(1, Math.min(count || 3, 6));
+    const normalizedTheme = theme.trim();
 
     const quotePool = [
         { quote: '真正重要的不是速度，而是方向。', author: '匿名电台编者' },
@@ -355,11 +433,32 @@ async function executeSearchQuotes(theme: string, count?: number): Promise<ToolR
         { quote: '温柔不是退让，而是带着边界感的理解。', author: '夜谈嘉宾' }
     ];
 
+    const themedQuotes: Record<string, Array<{ quote: string; author: string }>> = {
+        成长: [
+            { quote: '成长不是变完美，而是更会和不完美相处。', author: '夜谈手记' },
+            { quote: '你以为绕的路，常常是你真正理解自己的路。', author: '城市来信' },
+        ],
+        勇气: [
+            { quote: '勇气不是不怕，而是怕也愿意往前走一步。', author: '电台访谈' },
+            { quote: '真正的勇敢，是承认脆弱后仍选择行动。', author: '节目旁白' },
+        ],
+        爱情: [
+            { quote: '好的关系不是彼此消耗，而是互相照亮。', author: '深夜主播' },
+            { quote: '爱不是答案，爱是一起寻找答案的过程。', author: '听众来信' },
+        ],
+    };
+
+    const matchedThemeQuotes = Object.entries(themedQuotes)
+        .filter(([key]) => normalizedTheme.includes(key))
+        .flatMap(([, value]) => value);
+
+    const finalPool = [...matchedThemeQuotes, ...quotePool];
+
     return {
         success: true,
         data: {
-            theme,
-            quotes: quotePool.slice(0, safeCount),
+            theme: normalizedTheme,
+            quotes: finalPool.slice(0, safeCount),
             note: '可选 1-2 句用于开场或收束，不建议整段连续引用。'
         }
     };

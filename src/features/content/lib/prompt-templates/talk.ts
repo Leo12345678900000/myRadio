@@ -19,7 +19,8 @@ export function getTalkPrompt(context: PromptTemplateContext): string {
 
 ## 🧾 密度要求
 - 全期核心对话总句数建议 8-12 句以上。
-- 每个 talk block 至少 3 句，不少于 2 个来回。
+- 每个 talk block 至少 4-6 句，主话题段建议 8 句以上。
+- 连续同一说话人不宜超过 3 句，避免“念稿感”。
 `.trim();
 
     return getBasePrompt({

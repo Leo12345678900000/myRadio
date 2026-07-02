@@ -32,6 +32,8 @@ export default function RadioPlayer() {
         userMessage,
         showTimeline,
         pendingMailCount,
+        orchestrationHealth,
+        orchestrationMessage,
         // Actions
         togglePlayback,
         disconnect,
@@ -76,6 +78,14 @@ export default function RadioPlayer() {
                         className={`flex flex-col relative z-10 w-full max-w-md mx-auto transition-all duration-500 ${isSubtitleExpanded ? 'pt-8 pb-4' : 'pt-12 pb-4'
                             }`}
                     >
+                        <div className={`mx-4 mb-3 rounded-lg border px-3 py-2 text-[11px] font-mono ${orchestrationHealth === 'ready'
+                            ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                            : orchestrationHealth === 'degraded'
+                                ? 'border-amber-500/40 bg-amber-500/10 text-amber-200'
+                                : 'border-red-500/40 bg-red-500/10 text-red-200'
+                            }`}>
+                            ORCH: {orchestrationMessage}
+                        </div>
                         <SubtitleDisplay
                             currentLine={currentScript}
                             isExpanded={isSubtitleExpanded}

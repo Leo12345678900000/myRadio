@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, Save, Zap, CheckCircle, Loader2 } from "lucide-react";
 
 import { useSettingsPanel } from "./hooks/useSettingsPanel";
-import { APISettings, TTSSettings, PreloadSettings, UserPreferenceSettings } from "./ui";
+import { APISettings, TTSSettings, PreloadSettings, UserPreferenceSettings, ExperienceSettings, DemoMaterialEditor, LocalStatsPanel } from "./ui";
 
 interface SettingsPanelProps {
     isOpen: boolean;
@@ -23,6 +23,7 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
         showModelDropdown,
         ttsTestStatus,
         ttsTestMessage,
+        healthChecks,
         handleChange,
         handleSave,
         handleTest,
@@ -30,7 +31,14 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
         handleTtsTest,
         handleSelectModel,
         setShowModelDropdown,
+        handleCheckHealth,
     } = useSettingsPanel(isOpen);
+
+    const testDisabled = testStatus === "testing" || (
+        settings.runtimeMode === "live" &&
+        !(settings.backendRoute === "official" && settings.openSourceLlmProvider === "ollama") &&
+        !settings.apiKey
+    );
 
     return (
         <AnimatePresence>
@@ -74,10 +82,12 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                                 models={models}
                                 loadingModels={loadingModels}
                                 showModelDropdown={showModelDropdown}
+                                healthChecks={healthChecks}
                                 onSettingChange={handleChange}
                                 onFetchModels={handleFetchModels}
                                 onSelectModel={handleSelectModel}
                                 onToggleDropdown={setShowModelDropdown}
+                                onCheckHealth={handleCheckHealth}
                             />
 
                             {/* TTS Settings */}
@@ -95,13 +105,22 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                                 onSettingChange={handleChange}
                             />
 
+                            <ExperienceSettings
+                                settings={settings}
+                                onSettingChange={handleChange}
+                            />
+
+                            <DemoMaterialEditor />
+
+                            <LocalStatsPanel />
+
                             <UserPreferenceSettings />
 
                             {/* Actions */}
                             <div className="flex gap-3 pt-2">
                                 <button
                                     onClick={handleTest}
-                                    disabled={!settings.apiKey || testStatus === "testing"}
+                                    disabled={testDisabled}
                                     className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-neutral-800 hover:bg-neutral-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-xl transition-colors"
                                 >
                                     {testStatus === "testing" ? <Loader2 size={18} className="animate-spin" /> : <Zap size={18} />}

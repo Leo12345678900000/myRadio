@@ -18,11 +18,13 @@ import {
 } from './writer-tools';
 import { getProhibitedArtists } from '@features/music-search/lib/diversity-manager';
 import { parseResponse as parseTimelineResponse } from './response-parser';
-import { getShowConfig, ShowConfig } from './show-config';
+import { clampDurationByShowConfig, getShowConfig, ShowConfig } from './show-config';
 import { buildPromptByType } from './prompt-templates';
 import { getGenrePromptSection, getGenreSuggestions, recordUsedGenre } from '@features/music-search/lib/genre-wheel';
 import { SHOW_SEGMENT_STRUCTURES } from '@shared/types/segment';
 import { getUserPreferencePromptContext } from '@features/user-preferences/lib';
+import { enforceTimelineConstraints } from './timeline-constraints';
+import { buildInteractionPromptSection } from './interaction-types';
 
 // ================== Constants ==================
 
@@ -123,6 +125,7 @@ export class WriterAgent {
         // 1. 选择节目类型、配置和演员阵容
         const selectedShowType = showType || castDirector.randomShowType();
         const config = getShowConfig(selectedShowType);
+        const normalizedDuration = clampDurationByShowConfig(config, duration);
 
         this.currentShowType = selectedShowType;
         this.currentShowConfig = config;
@@ -137,11 +140,11 @@ export class WriterAgent {
         const typePrompt = this.buildPromptForType(
             selectedShowType,
             config,
-            duration,
+            normalizedDuration,
             theme,
             userRequest
         );
-        const systemPrompt = this.buildReActSystemPrompt(typePrompt, selectedShowType, config);
+        const systemPrompt = this.buildReActSystemPrompt(typePrompt, selectedShowType, config, normalizedDuration);
 
         // 3. 初始化对话历史
         this.conversationHistory = [];
@@ -292,6 +295,12 @@ export class WriterAgent {
             return this.getDefaultTimeline();
         }
 
+        finalTimeline = enforceTimelineConstraints(finalTimeline, {
+            showType: selectedShowType,
+            config,
+            targetDuration: normalizedDuration
+        });
+
         if (selectedShowType === 'music' && this.currentGenreSuggestions.length > 0) {
             recordUsedGenre(this.currentGenreSuggestions[0]);
         }
@@ -303,7 +312,7 @@ export class WriterAgent {
     /**
      * 构建 ReAct 系统提示
      */
-    private buildReActSystemPrompt(typePrompt: string, showType: ShowType, config: ShowConfig): string {
+    private buildReActSystemPrompt(typePrompt: string, showType: ShowType, config: ShowConfig, duration: number): string {
         const historyContext = getHistoryContext();
         const toolsDesc = getToolsDescription(this.activeToolNames);
         const userPreferenceContext = getUserPreferencePromptContext();
@@ -317,9 +326,12 @@ export class WriterAgent {
         const flowSteps = [
             this.activeToolNames.includes('check_duplicate') ? '1) 先调用 check_duplicate 检查主题是否重复。' : '',
             this.activeToolNames.includes('fetch_news') ? '2) 若是资讯型内容，调用 fetch_news 获取素材。' : '',
-            this.activeToolNames.includes('search_music') ? '3) 需要音乐时用 search_music（可附带 genre_hint）。' : '',
-            this.activeToolNames.includes('check_artist_diversity') ? '4) 完稿后调用 check_artist_diversity 自检。' : '',
-            '5) 最终必须调用 submit_show 提交完整 timeline_json。'
+            this.activeToolNames.includes('search_knowledge') ? '3) 涉及历史/科普/背景时调用 search_knowledge 补充事实框架。' : '',
+            this.activeToolNames.includes('fetch_trending') ? '4) 综艺或评论场景优先调用 fetch_trending 选取当期热点。' : '',
+            this.activeToolNames.includes('search_quotes') ? '5) 开场或收束可调用 search_quotes 引入 1-2 句金句。' : '',
+            this.activeToolNames.includes('search_music') ? '6) 需要音乐时用 search_music（可附带 genre_hint）。' : '',
+            this.activeToolNames.includes('check_artist_diversity') ? '7) 完稿后调用 check_artist_diversity 自检。' : '',
+            '8) 最终必须调用 submit_show 提交完整 timeline_json。'
         ].filter(Boolean).join('\n');
 
         const memoryContext = globalState.getContextForPrompt();
@@ -328,6 +340,7 @@ export class WriterAgent {
 
 ## 🧩 本期模式
 - 节目类型：${showType}
+- 目标时长：${duration} 秒（已按节目类型建议区间校正）
 - 对话占比建议：${config.talkRatio[0]}%-${config.talkRatio[1]}%
 - 音乐占比建议：${config.musicRatio[0]}%-${config.musicRatio[1]}%
 - 音乐用途：${config.musicPurpose}
@@ -350,7 +363,7 @@ ${flowSteps}
 
 ## 输出格式
 最终提交时，timeline_json 必须是以下格式：
-${this.getOutputFormatExample()}
+${this.getOutputFormatExample(duration)}
 
 ${typePrompt}
 
@@ -362,11 +375,11 @@ ${getVoiceListForPrompt()}
     /**
      * 获取输出格式示例
      */
-    private getOutputFormatExample(): string {
+    private getOutputFormatExample(duration: number): string {
         return `{
   "id": "唯一ID",
   "title": "节目标题",
-  "estimatedDuration": 120,
+  "estimatedDuration": ${duration},
   "blocks": [
     {"type": "talk", "id": "talk-1", "scripts": [{"speaker": "host1", "text": "...", "mood": "warm"}]},
     {"type": "music", "id": "music-1", "action": "play", "search": "歌名", "duration": 60}
@@ -423,11 +436,15 @@ ${getVoiceListForPrompt()}
         if (segmentHints) {
             extraSections.push(`## 🧱 环节建议\n${segmentHints}`);
         }
+        extraSections.push(`## 🧭 环节顺序约束\n优先按以下顺序组织 blocks：${config.preferredSegmentOrder.join(' -> ')}。\n至少包含“开场 talk”与“结尾 talk”，如有音乐段请放在中段或转场位。`);
+        extraSections.push(buildInteractionPromptSection(type, config.interactionLevel));
 
         if (type === 'music' && this.currentGenreSuggestions.length > 0) {
             extraSections.push(getGenrePromptSection(this.currentGenreSuggestions));
         }
 
+        extraSections.push(this.getShowStyleGuidance(config));
+        extraSections.push(this.getDialoguePatternGuidance(type));
         extraSections.push(`## 📐 比例约束\n- Talk 占比建议：${config.talkRatio[0]}%-${config.talkRatio[1]}%\n- Music 占比建议：${config.musicRatio[0]}%-${config.musicRatio[1]}%\n- 音乐用途：${config.musicPurpose}`);
 
         return buildPromptByType(type, {
@@ -442,6 +459,59 @@ ${getVoiceListForPrompt()}
             userRequest,
             extraSections
         }, config);
+    }
+
+    private getShowStyleGuidance(config: ShowConfig): string {
+        const depthGuidance: Record<ShowConfig['talkDepth'], string> = {
+            shallow: '每个话题点到为止，强调节奏明快与信息直给。',
+            medium: '每个话题至少展开 2 个层面，并给出一个具体例子。',
+            deep: '围绕背景、原因、影响、个人经验至少展开 3 个层面。'
+        };
+
+        const interactionGuidance: Record<ShowConfig['interactionLevel'], string> = {
+            none: '无需强行设计互动桥段，重点保证信息连贯。',
+            low: '可有 1 段简短互动（问答/来信）增强真实感。',
+            medium: '建议加入 1-2 段互动，推动话题转场。',
+            high: '至少 2 段互动（问答、投票、听众留言）提升现场感。'
+        };
+
+        const pacingGuidance: Record<ShowConfig['pacing'], string> = {
+            fast: '句子简洁，转场快，避免长段落独白。',
+            medium: '兼顾信息密度与节奏平衡，段落长短交替。',
+            slow: '允许适度留白与情绪铺垫，但仍需保持推进。'
+        };
+
+        return `## 🎛️ 节目风格约束
+- 目标时长区间：${config.durationRange[0]}-${config.durationRange[1]} 秒
+- 对话深度：${config.talkDepth}（${depthGuidance[config.talkDepth]}）
+- 互动等级：${config.interactionLevel}（${interactionGuidance[config.interactionLevel]}）
+- 节奏：${config.pacing}（${pacingGuidance[config.pacing]}）
+
+## 🧾 内容密度要求
+- 每个 talk block 至少 ${config.scriptDensity.minLinesPerTalkBlock} 句
+- 单句建议至少 ${config.scriptDensity.minCharsPerLine} 字
+- 同一角色连续不超过 ${config.scriptDensity.maxConsecutiveLinesPerSpeaker} 句`;
+    }
+
+    private getDialoguePatternGuidance(type: ShowType): string {
+        const guidance: Record<ShowType, string> = {
+            talk: '- 辩论式：观点冲突 -> 例子反驳 -> 局部共识\n- 叙事接力：A 讲经历 -> B 追问 -> A 深挖',
+            interview: '- 采访式：提问 -> 追问 -> 案例细化 -> 总结\n- 快问快答：高频短问短答后回到主议题',
+            news: '- 播报式：总览 -> 分条事实 -> 影响解读\n- 评论式：避免情绪化判断，使用可验证信息',
+            drama: '- 戏剧式：冲突引入 -> 对话升级 -> 情绪转折 -> 收束',
+            entertainment: '- 综艺式：抛梗 -> 接梗 -> 反转 -> 互动',
+            story: '- 叙事式：背景铺陈 -> 冲突出现 -> 解决/留白',
+            history: '- 历史讲述：背景 -> 关键人物 -> 事件转折 -> 当代启示',
+            science: '- 科普问答：问题提出 -> 原理拆解 -> 生活类比 -> 误区纠正',
+            mystery: '- 悬疑推进：线索抛出 -> 假设推理 -> 线索校验 -> 开放结尾',
+            nighttalk: '- 倾诉式：共情回应 -> 故事分享 -> 温柔建议 -> 安抚收束',
+            music: '- 音乐专题：风格介绍 -> 曲目故事 -> 听感表达 -> 选曲理由'
+        };
+
+        return `## 🗣️ 对话模式建议
+${guidance[type]}
+
+避免“单人长段独白”，尽量让对话有推进和反馈。`;
     }
 
     /**

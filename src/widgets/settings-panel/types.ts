@@ -1,6 +1,19 @@
 import { IApiSettings } from '@shared/services/storage-service/settings';
 
 export type TestStatus = "idle" | "testing" | "success" | "error";
+export type HealthCheckStatus = "idle" | "checking" | "ok" | "error";
+
+export interface HealthItemState {
+    status: HealthCheckStatus;
+    message: string;
+}
+
+export interface HealthCheckState {
+    proxy: HealthItemState;
+    officialBackend: HealthItemState;
+    supabase: HealthItemState;
+    ollama: HealthItemState;
+}
 
 export interface SettingsPanelState {
     settings: IApiSettings;
@@ -12,6 +25,7 @@ export interface SettingsPanelState {
     showModelDropdown: boolean;
     ttsTestStatus: TestStatus;
     ttsTestMessage: string;
+    healthChecks: HealthCheckState;
 }
 
 export interface SettingsPanelActions {
@@ -22,4 +36,5 @@ export interface SettingsPanelActions {
     handleTtsTest: () => Promise<void>;
     handleSelectModel: (model: string) => void;
     setShowModelDropdown: (show: boolean) => void;
+    handleCheckHealth: () => Promise<void>;
 }

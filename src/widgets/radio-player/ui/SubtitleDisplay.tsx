@@ -32,7 +32,7 @@ const talkBarHeights = Array.from({ length: 20 }, (_, i) => 16 + ((i * 11) % 36)
 const defaultDisplayInfo: DisplayInfo = {
     type: 'idle',
     speaker: 'system',
-    displayName: 'Radio Nowhere',
+    displayName: 'AetherWave',
     subtitle: ''
 };
 
@@ -121,7 +121,7 @@ const SubtitleDisplay = React.memo(({ currentLine, isExpanded, onExpandChange }:
             return;
         }
 
-        if (displayInfo.type === 'music' && displayInfo.displayName && displayInfo.displayName !== 'Now Playing' && displayInfo.displayName !== 'Radio Nowhere') {
+        if (displayInfo.type === 'music' && displayInfo.displayName && displayInfo.displayName !== 'Now Playing' && displayInfo.displayName !== 'AetherWave') {
             const trackName = displayInfo.displayName;
 
             // Avoid refetching same track
