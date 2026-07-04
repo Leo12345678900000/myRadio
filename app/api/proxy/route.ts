@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
  * Body: { url: string, method: string, headers: object, body?: object }
  */
 
-const REQUEST_TIMEOUT_MS = 15000;
+const REQUEST_TIMEOUT_MS = 60000;
 
 const ALLOWED_METHODS = new Set([
     'GET',

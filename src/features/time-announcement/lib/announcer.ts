@@ -3,7 +3,9 @@
  * 在整点和半点播放报时音频
  */
 
-import { ttsAgent } from '@features/tts/lib/tts-agent';
+import { narratorAgent } from '@features/narrator';
+import { playNarrationArtifact } from '@features/narrator/lib/playback';
+import { NarrationArtifact } from '@features/narrator/lib/types';
 import { audioMixer } from '@shared/services/audio-service/mixer';
 import { radioMonitor } from '@shared/services/monitor-service';
 import { TIME_ANNOUNCEMENT } from '@shared/utils/constants';
@@ -13,7 +15,7 @@ import { TIME_ANNOUNCEMENT } from '@shared/utils/constants';
 interface TimeAnnouncementState {
     isActive: boolean;
     nextAnnouncementTime: Date | null;
-    preparedAudio: ArrayBuffer | null;
+    preparedNarration: NarrationArtifact | null;
     checkInterval: NodeJS.Timeout | null;
     isPlaying: boolean; // 防止重复触发
     isPreparing: boolean; // 防止重复生成
@@ -32,7 +34,7 @@ class TimeAnnouncementService {
     private state: TimeAnnouncementState = {
         isActive: false,
         nextAnnouncementTime: null,
-        preparedAudio: null,
+        preparedNarration: null,
         checkInterval: null,
         isPlaying: false,
         isPreparing: false
@@ -70,7 +72,7 @@ class TimeAnnouncementService {
             clearInterval(this.state.checkInterval);
             this.state.checkInterval = null;
         }
-        this.state.preparedAudio = null;
+        this.state.preparedNarration = null;
         this.state.nextAnnouncementTime = null;
         this.state.isPreparing = false;
     }
@@ -131,12 +133,11 @@ class TimeAnnouncementService {
         const timeUntil = targetTime - now;
 
         // 如果还没准备 TTS，立即开始准备（只要时间还够）
-        if (!this.state.preparedAudio && timeUntil > TRIGGER_BEFORE_MS) {
-            await this.prepareTTS();
+        if (!this.state.preparedNarration && timeUntil > TRIGGER_BEFORE_MS) {
+            await this.prepareNarration();
         }
 
-        // 提前6秒触发播放（只触发一次）
-        if (timeUntil <= TRIGGER_BEFORE_MS && timeUntil > 0 && this.state.preparedAudio && !this.state.isPlaying) {
+        if (timeUntil <= TRIGGER_BEFORE_MS && timeUntil > 0 && this.state.preparedNarration && !this.state.isPlaying) {
             this.state.isPlaying = true; // 立即设置标志，防止重复触发
             await this.playAnnouncement();
         }
@@ -145,7 +146,7 @@ class TimeAnnouncementService {
     /**
      * 准备报时TTS
      */
-    private async prepareTTS(): Promise<void> {
+    private async prepareNarration(): Promise<void> {
         if (!this.state.nextAnnouncementTime) return;
 
         this.state.isPreparing = true;
@@ -154,16 +155,15 @@ class TimeAnnouncementService {
             const text = this.generateAnnouncementText(this.state.nextAnnouncementTime);
             radioMonitor.log('DIRECTOR', `Preparing time announcement: ${text}`, 'info');
 
-            // 使用严肃的报时音色
-            const result = await ttsAgent.generateSpeech(
+            const artifact = await narratorAgent.narrateSpeech(
                 text,
                 'announcer',
                 { mood: 'serious' }
             );
 
-            if (result.success && result.audioData) {
-                this.state.preparedAudio = result.audioData;
-                radioMonitor.log('DIRECTOR', 'Time announcement TTS ready', 'info');
+            if (artifact.success || artifact.mode === 'subtitle-timed') {
+                this.state.preparedNarration = artifact;
+                radioMonitor.log('DIRECTOR', 'Time announcement narration ready', 'info');
             }
         } catch (error) {
             radioMonitor.log('DIRECTOR', `Failed to prepare time announcement: ${error}`, 'error');
@@ -176,7 +176,7 @@ class TimeAnnouncementService {
      * 播放报时
      */
     private async playAnnouncement(): Promise<void> {
-        if (!this.state.preparedAudio) {
+        if (!this.state.preparedNarration) {
             this.state.isPlaying = false;
             return;
         }
@@ -195,7 +195,7 @@ class TimeAnnouncementService {
             await this.playJingle();
 
             // 3. 播放报时 TTS
-            await audioMixer.playVoice(this.state.preparedAudio);
+            await playNarrationArtifact(this.state.preparedNarration);
 
             // 4. 等待 3 秒
             await this.delay(RESUME_DELAY_MS);
@@ -215,7 +215,7 @@ class TimeAnnouncementService {
         this.pausedState = null;
 
         // 6. 重置状态，计算下一次报时
-        this.state.preparedAudio = null;
+        this.state.preparedNarration = null;
         this.state.isPlaying = false;
         this.state.nextAnnouncementTime = this.calculateNextAnnouncementTime();
         radioMonitor.log('DIRECTOR', `Next announcement: ${this.state.nextAnnouncementTime.toLocaleTimeString()}`, 'info');

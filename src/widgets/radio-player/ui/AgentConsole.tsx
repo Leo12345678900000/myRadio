@@ -11,7 +11,7 @@ interface AgentConsoleProps {
 const AgentConsole = React.memo(({ statuses }: AgentConsoleProps) => {
     const agents = useMemo(() => [
         { id: 'WRITER', icon: <Cpu size={10} />, label: 'Writer' },
-        { id: 'TTS', icon: <Mic2 size={10} />, label: 'TTS' },
+        { id: 'NARRATOR', icon: <Mic2 size={10} />, label: 'Narrator' },
         { id: 'DIRECTOR', icon: <Zap size={10} />, label: 'Director' },
         { id: 'MIXER', icon: <Music size={10} />, label: 'Mixer' },
     ], []);

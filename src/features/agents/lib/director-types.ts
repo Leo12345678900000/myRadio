@@ -38,6 +38,7 @@ export interface DirectorState {
 
     // 缓存
     preparedAudio: Map<string, ArrayBuffer>;
+    preparedNarration: Map<string, import('@features/narrator/lib/types').NarrationArtifact>;
     musicCache: Map<string, IGDMusicTrack>;
     musicUrlCache: Map<string, { url: string; cachedAt: number }>;
     musicDataCache: Map<string, Blob>;
@@ -63,6 +64,7 @@ export function createDefaultState(): DirectorState {
         skipRequested: false,
         targetBlockIndex: -1,
         preparedAudio: new Map(),
+        preparedNarration: new Map(),
         musicCache: new Map(),
         musicUrlCache: new Map(),
         musicDataCache: new Map(),

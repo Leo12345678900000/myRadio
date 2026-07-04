@@ -4,7 +4,9 @@
  */
 
 import { MusicBlock, MusicControlBlock } from '@shared/types/radio-core';
-import { ttsAgent } from '@features/tts/lib/tts-agent';
+import { narratorAgent } from '@features/narrator';
+import { playNarrationArtifact } from '@features/narrator/lib/playback';
+import { NarrationArtifact } from '@features/narrator/lib/types';
 import { audioMixer } from '@shared/services/audio-service/mixer';
 import { radioMonitor } from '@shared/services/monitor-service';
 import { globalState } from '@shared/stores/global-state';
@@ -171,25 +173,22 @@ export async function executeMusicBlock(
 ): Promise<void> {
     try {
         // 1. 先生成介绍词 TTS
-        let introAudio: ArrayBuffer | null = null;
+        let introArtifact: NarrationArtifact | null = null;
         if (block.intro) {
             try {
-                const result = await ttsAgent.generateSpeech(
+                introArtifact = await narratorAgent.narrateSpeech(
                     block.intro.text,
                     block.intro.speaker,
                     { mood: block.intro.mood }
                 );
-                if (result.success && result.audioData) {
-                    introAudio = result.audioData;
-                }
             } catch (e) {
-                console.warn('[Director] Intro TTS generation failed:', e);
+                console.warn('[Director] Intro narration failed:', e);
             }
         }
 
         const playIntroOverlay = async () => {
-            if (introAudio) {
-                await audioMixer.overlayVoice(introAudio);
+            if (introArtifact?.success || introArtifact?.mode === 'subtitle-timed') {
+                await playNarrationArtifact(introArtifact);
             }
         };
 

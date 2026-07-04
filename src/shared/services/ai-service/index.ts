@@ -72,10 +72,10 @@ export function buildVertexUrl(project: string, location: string, model: string,
 /**
  * 解析 URL 获取服务类型
  */
-function getServiceFromUrl(url: string): 'AI' | 'TTS' | 'Music' | 'Lyrics' | 'Proxy' {
+function getServiceFromUrl(url: string): 'AI' | 'NARRATOR' | 'Music' | 'Lyrics' | 'Proxy' {
     const lowerUrl = url.toLowerCase();
     if (lowerUrl.includes('generatecontent')) {
-        if (lowerUrl.includes('tts') || lowerUrl.includes('speech')) return 'TTS';
+        if (lowerUrl.includes('tts') || lowerUrl.includes('speech')) return 'NARRATOR';
         return 'AI';
     }
     if (lowerUrl.includes('music-api') || lowerUrl.includes('gdstudio')) {

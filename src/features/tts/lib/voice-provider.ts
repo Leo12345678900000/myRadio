@@ -3,8 +3,6 @@
  * 根据当前 TTS 渠道动态返回可用音色列表
  */
 
-import { getSettings } from '@shared/services/storage-service/settings';
-import { TTS_VOICES, TTSVoice } from '@features/voice-profiles/lib/voice-manager';
 import { MICROSOFT_TTS_VOICES, MicrosoftTTSVoice } from '@features/voice-profiles/lib/microsoft-voices';
 
 // ================== Unified Voice Interface ==================
@@ -18,19 +16,6 @@ export interface UnifiedVoice {
 }
 
 // ================== Voice Converters ==================
-
-/**
- * Gemini 音色转换
- */
-function convertGeminiVoice(voice: TTSVoice): UnifiedVoice {
-    return {
-        id: voice.name,
-        name: voice.name,
-        gender: voice.gender,
-        language: voice.language,
-        style: voice.style
-    };
-}
 
 /**
  * Microsoft 音色转换
@@ -79,16 +64,9 @@ const VERIFIED_EDGE_VOICES = new Set([
  * 获取当前 TTS 渠道可用的音色列表
  */
 export function getAvailableVoices(): UnifiedVoice[] {
-    const settings = getSettings();
-
-    if (settings.ttsProvider === 'microsoft') {
-        // 只返回 Edge TTS 已验证支持的音色
-        return MICROSOFT_TTS_VOICES
-            .filter(v => VERIFIED_EDGE_VOICES.has(v.name))
-            .map(convertMicrosoftVoice);
-    }
-
-    return TTS_VOICES.map(convertGeminiVoice);
+    return MICROSOFT_TTS_VOICES
+        .filter(v => VERIFIED_EDGE_VOICES.has(v.name))
+        .map(convertMicrosoftVoice);
 }
 
 /**
@@ -110,9 +88,8 @@ export function getVoicesByLanguage(lang: 'zh' | 'en' | 'ja' | 'multi'): Unified
  * 用于注入到 Writer Agent 的 prompt 中
  */
 export function getVoiceListForPrompt(): string {
-    const settings = getSettings();
     const voices = getAvailableVoices();
-    const provider = settings.ttsProvider === 'microsoft' ? '微软 Azure Neural TTS' : 'Google Gemini TTS';
+    const provider = 'edge-tts (Microsoft Neural)';
 
     // 按语言分组
     const zhVoices = voices.filter(v => v.language === 'zh');
@@ -142,7 +119,7 @@ ${jaVoices.slice(0, 5).map(v => `- \`${v.id}\`: ${v.name} (${v.gender === 'femal
 `;
     }
 
-    if (multiVoices.length > 0 && settings.ttsProvider !== 'microsoft') {
+    if (multiVoices.length > 0) {
         prompt += `
 ### 多语言通用音色
 ${multiVoices.slice(0, 5).map(v => `- \`${v.id}\`: ${v.name} (${v.gender === 'female' ? '女' : v.gender === 'male' ? '男' : '中性'}) - ${v.style}`).join('\n')}
@@ -186,6 +163,6 @@ export function getMicrosoftFullVoiceName(voiceId: string): string {
 /**
  * 获取当前 TTS 渠道名称
  */
-export function getCurrentTTSProvider(): 'gemini' | 'microsoft' {
-    return getSettings().ttsProvider;
+export function getCurrentTTSProvider(): 'edge-tts' {
+    return 'edge-tts';
 }

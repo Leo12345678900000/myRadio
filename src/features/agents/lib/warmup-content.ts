@@ -3,7 +3,8 @@
  * 处理开场问候语和过渡音乐
  */
 
-import { ttsAgent } from '@features/tts/lib/tts-agent';
+import { narratorAgent } from '@features/narrator';
+import { playNarrationArtifact } from '@features/narrator/lib/playback';
 import { audioMixer } from '@shared/services/audio-service/mixer';
 import { radioMonitor } from '@shared/services/monitor-service';
 import { searchMusic, getMusicUrl } from '@features/music-search/lib/gd-music-service';
@@ -46,17 +47,18 @@ export async function playWarmupContent(
 
         // 2. 同时生成简短的开场问候语
         const greeting = getQuickGreeting();
-        const ttsResult = await ttsAgent.generateSpeech(
+        const artifact = await narratorAgent.narrateSpeech(
             greeting,
             'host1',
-            { mood: 'warm', priority: 10 }
+            { mood: 'warm' }
         );
 
-        // 3. 播放问候语（叠加在音乐上）
-        if (ttsResult.success && ttsResult.audioData) {
+        if (artifact.success) {
             await audioMixer.fadeMusic(0.15, 500);
-            await audioMixer.playVoice(ttsResult.audioData);
+            await playNarrationArtifact(artifact);
             await audioMixer.fadeMusic(0.7, 1000);
+        } else if (artifact.mode === 'subtitle-timed') {
+            await playNarrationArtifact(artifact);
         }
 
         radioMonitor.log('DIRECTOR', 'Warmup content playing', 'info');

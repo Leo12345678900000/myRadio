@@ -3,14 +3,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import { getSettings, saveSettings, IApiSettings, ApiType, DEFAULT_SETTINGS } from '@shared/services/storage-service/settings';
 import { testConnection, fetchModels, fetchOfficialModels } from '@shared/services/ai-service';
-import { checkOfficialBackendHealth, checkOllamaHealth, checkProxyHealth, checkSupabaseHealth } from '@shared/services/health-service';
+import { checkEdgeTtsHealth, checkOfficialBackendHealth, checkOllamaHealth, checkProxyHealth, checkSupabaseHealth } from '@shared/services/health-service';
 import { SettingsPanelState, SettingsPanelActions, TestStatus, HealthCheckState } from '../types';
 
-// Constants
-const MS_TTS_DEFAULT_TOKEN = 'tetr5354';
 const DEFAULT_HEALTH_STATE: HealthCheckState = {
     proxy: { status: "idle", message: "Not checked" },
     officialBackend: { status: "idle", message: "Not checked" },
+    edgeTts: { status: "idle", message: "Not checked" },
     supabase: { status: "idle", message: "Not checked" },
     ollama: { status: "idle", message: "Not checked" },
 };
@@ -126,91 +125,66 @@ export function useSettingsPanel(isOpen: boolean): SettingsPanelState & Settings
         }
     }, []);
 
-    const handleTtsTest = useCallback(async () => {
+    const handleNarratorTest = useCallback(async () => {
         setTtsTestStatus("testing");
-        setTtsTestMessage("正在测试 TTS...");
+        setTtsTestMessage("正在测试旁白...");
+
+        saveSettings(settings);
 
         try {
-            if (settings.ttsProvider === 'microsoft') {
-                const endpoint = (settings.msTtsEndpoint || 'https://tts.cjack.top').replace(/\/$/, '');
-                const voice = encodeURIComponent('Microsoft Server Speech Text to Speech Voice (zh-CN, XiaoxiaoNeural)');
-                const url = `${endpoint}/api/text-to-speech?voice=${voice}&volume=100&rate=0&pitch=0&text=${encodeURIComponent('测试')}`;
+            const baseUrl = (settings.edgeTtsBackendUrl || settings.officialBackendUrl || 'http://localhost:8000').replace(/\/$/, '');
 
-                const token = settings.msTtsAuthKey || MS_TTS_DEFAULT_TOKEN;
-                const response = await fetch(url, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
+            if (settings.voiceMode === 'subtitle-only') {
+                setTtsTestStatus("success");
+                setTtsTestMessage("✅ 字幕模式：无需音频服务");
+                return;
+            }
 
-                if (response.ok) {
-                    const contentType = response.headers.get('content-type');
-                    if (contentType?.includes('audio')) {
-                        setTtsTestStatus("success");
-                        setTtsTestMessage("✅ 微软 TTS 连接成功!");
-                    } else {
-                        setTtsTestStatus("error");
-                        setTtsTestMessage(`❌ 返回类型错误: ${contentType}`);
-                    }
-                } else {
-                    const err = await response.text();
-                    setTtsTestStatus("error");
-                    setTtsTestMessage(`❌ ${response.status}: ${err.slice(0, 50)}`);
-                }
-            } else {
-                const ttsKey = settings.ttsApiKey || settings.apiKey;
-                if (!ttsKey) {
-                    setTtsTestStatus("error");
-                    setTtsTestMessage("请先填写 API Key");
-                    return;
-                }
-
-                let apiUrl = '';
-                const method = 'POST';
-                const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-
-                if (settings.apiType === 'vertexai' && settings.ttsUseVertex) {
-                    const model = settings.ttsModel || 'gemini-2.5-flash';
-                    const isGcpApiKey = settings.apiKey.startsWith('AIza');
-                    apiUrl = `https://${settings.gcpLocation}-aiplatform.googleapis.com/v1/projects/${settings.gcpProject}/locations/${settings.gcpLocation}/publishers/google/models/${model}:generateContent` + (isGcpApiKey ? `?key=${settings.apiKey}` : '');
-
-                    if (!isGcpApiKey) {
-                        headers['Authorization'] = `Bearer ${settings.apiKey}`;
-                    }
-                } else {
-                    const baseUrl = settings.ttsEndpoint || 'https://generativelanguage.googleapis.com';
-                    const ttsModel = settings.ttsModel || 'gemini-2.5-flash-preview-tts';
-                    apiUrl = `${baseUrl}/v1beta/models/${ttsModel}:generateContent`;
-                    headers['x-goog-api-key'] = ttsKey;
-                }
-
-                const response = await fetch('/api/proxy', {
+            if (settings.voiceMode === 'edge' || settings.voiceMode === 'auto') {
+                const response = await fetch(`${baseUrl}/api/tts/speak`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        url: apiUrl,
-                        method,
-                        headers,
-                        body: {
-                            contents: [{ role: "user", parts: [{ text: 'Say the following text: 这是一个测试。' }] }],
-                            generationConfig: {
-                                responseModalities: ['AUDIO'],
-                                speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } } }
-                            }
-                        }
-                    })
+                        text: '欢迎收听 AetherWave，这是 edge-tts 旁白测试。',
+                        voice: settings.edgeTtsVoiceHost1,
+                    }),
                 });
 
                 if (response.ok) {
-                    setTtsTestStatus("success");
-                    setTtsTestMessage("✅ Gemini TTS 连接成功!");
-                } else {
+                    const contentType = response.headers.get('content-type') ?? '';
+                    if (contentType.includes('audio')) {
+                        setTtsTestStatus("success");
+                        setTtsTestMessage(`✅ edge-tts 可用 (${settings.voiceMode === 'auto' ? 'auto 模式 L1 就绪' : 'edge 模式'})`);
+                        return;
+                    }
+                }
+
+                if (settings.voiceMode === 'edge') {
                     const err = await response.text();
                     setTtsTestStatus("error");
-                    setTtsTestMessage(`❌ ${response.status}: ${err.slice(0, 200)}`);
+                    setTtsTestMessage(`❌ edge-tts 失败: ${response.status} ${err.slice(0, 80)}`);
+                    return;
                 }
+
+                setTtsTestMessage("edge-tts 不可用，继续检测浏览器降级...");
             }
+
+            if ((settings.voiceMode === 'browser' || settings.voiceMode === 'auto') && settings.browserSpeechEnabled) {
+                if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                    setTtsTestStatus("success");
+                    setTtsTestMessage(`✅ 浏览器朗读可用 (${settings.voiceMode === 'auto' ? 'auto 将降级到 L2' : 'browser 模式'})`);
+                    return;
+                }
+                setTtsTestStatus("error");
+                setTtsTestMessage("❌ 浏览器不支持 SpeechSynthesis");
+                return;
+            }
+
+            setTtsTestStatus("success");
+            setTtsTestMessage("✅ 将使用字幕计时模式");
         } catch (e) {
             setTtsTestStatus("error");
-            setTtsTestMessage(`❌ 连接失败: ${e}`);
+            setTtsTestMessage(`❌ 旁白测试失败: ${e}`);
         }
     }, [settings]);
 
@@ -223,13 +197,15 @@ export function useSettingsPanel(isOpen: boolean): SettingsPanelState & Settings
         setHealthChecks({
             proxy: { status: "checking", message: "Checking..." },
             officialBackend: { status: "checking", message: "Checking..." },
+            edgeTts: { status: "checking", message: "Checking..." },
             supabase: { status: "checking", message: "Checking..." },
             ollama: { status: "checking", message: "Checking..." },
         });
 
-        const [proxy, officialBackend, supabase, ollama] = await Promise.all([
+        const [proxy, officialBackend, edgeTts, supabase, ollama] = await Promise.all([
             checkProxyHealth(),
             checkOfficialBackendHealth(settings),
+            checkEdgeTtsHealth(settings),
             checkSupabaseHealth(settings),
             checkOllamaHealth(settings),
         ]);
@@ -237,6 +213,7 @@ export function useSettingsPanel(isOpen: boolean): SettingsPanelState & Settings
         setHealthChecks({
             proxy: { status: proxy.status, message: proxy.message },
             officialBackend: { status: officialBackend.status, message: officialBackend.message },
+            edgeTts: { status: edgeTts.status, message: edgeTts.message },
             supabase: { status: supabase.status, message: supabase.message },
             ollama: { status: ollama.status, message: ollama.message },
         });
@@ -259,7 +236,7 @@ export function useSettingsPanel(isOpen: boolean): SettingsPanelState & Settings
         handleSave,
         handleTest,
         handleFetchModels,
-        handleTtsTest,
+        handleNarratorTest,
         handleSelectModel,
         setShowModelDropdown,
         handleCheckHealth,

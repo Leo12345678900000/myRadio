@@ -1,99 +1,54 @@
 /**
- * Talk Executor - 对话执行模块
- * 处理 TalkBlock 的准备和执行
+ * Talk Executor - 对话执行模块（Narrator Agent）
  */
 
 import { TalkBlock } from '@shared/types/radio-core';
-import { ttsAgent } from '@features/tts/lib/tts-agent';
-import { audioMixer } from '@shared/services/audio-service/mixer';
+import { narratorAgent } from '@features/narrator';
+import {
+    getScriptArtifactId,
+    isNarrationReady,
+    playNarrationArtifact,
+} from '@features/narrator/lib/playback';
+import { NarrationArtifact } from '@features/narrator/lib/types';
 import { radioMonitor } from '@shared/services/monitor-service';
 import { globalState } from '@shared/stores/global-state';
-import { getSettings } from '@shared/services/storage-service/settings';
 import { AUDIO } from '@shared/utils/constants';
+import { audioMixer } from '@shared/services/audio-service/mixer';
 import { DirectorState } from './director-types';
 
-/**
- * 预处理说话块（智能选择批量/分开 TTS）
- */
-export async function prepareTalkBlock(
+async function prepareScriptLine(
     state: DirectorState,
-    block: TalkBlock
+    blockId: string,
+    script: TalkBlock['scripts'][number]
 ): Promise<void> {
-    const settings = getSettings();
-    const uniqueSpeakers = new Set(block.scripts.map(s => s.speaker));
+    const artifactId = getScriptArtifactId(blockId, script.speaker, script.text);
+    if (state.preparedNarration.has(artifactId)) return;
 
-    if (settings.ttsProvider === 'gemini' && uniqueSpeakers.size <= 2 && block.scripts.length >= 1) {
-        await prepareTalkBlockBatched(state, block);
-    } else {
-        await prepareTalkBlockSingle(state, block);
-    }
-}
-
-/**
- * 批量 TTS 预处理（Gemini 专用）
- */
-export async function prepareTalkBlockBatched(
-    state: DirectorState,
-    block: TalkBlock
-): Promise<void> {
-    const batchAudioId = `${block.id}-batch`;
-    if (state.preparedAudio.has(batchAudioId)) return;
-
-    try {
-        const result = await ttsAgent.generateBatchedSpeech(
-            block.scripts.map(s => ({
-                speaker: s.speaker,
-                text: s.text,
-                voiceName: s.voiceName,
-                mood: s.mood
-            }))
-        );
-
-        if (result.success && result.audioData) {
-            state.preparedAudio.set(batchAudioId, result.audioData);
-        }
-    } catch (error) {
-        console.error('Batched TTS preparation failed:', error);
-        await prepareTalkBlockSingle(state, block);
-    }
-}
-
-/**
- * 单句 TTS 预处理
- */
-export async function prepareTalkBlockSingle(
-    state: DirectorState,
-    block: TalkBlock
-): Promise<void> {
-    const ttsPromises = block.scripts.map(async (script) => {
-        const audioId = `${block.id}-${script.speaker}-${script.text.slice(0, 20)}`;
-        if (state.preparedAudio.has(audioId)) return;
-
-        try {
-            const result = await ttsAgent.generateSpeech(
-                script.text,
-                script.speaker,
-                {
-                    mood: script.mood,
-                    customStyle: script.voiceStyle,
-                    priority: 8,
-                    voiceName: script.voiceName
-                }
-            );
-
-            if (result.success && result.audioData) {
-                state.preparedAudio.set(audioId, result.audioData);
-            }
-        } catch (error) {
-            console.error('TTS preparation failed:', error);
-        }
+    const artifact = await narratorAgent.narrateSpeech(script.text, script.speaker, {
+        mood: script.mood,
+        customStyle: script.voiceStyle,
+        voiceName: script.voiceName,
     });
-    await Promise.all(ttsPromises);
+
+    if (artifact.success || artifact.mode === 'subtitle-timed') {
+        state.preparedNarration.set(artifactId, artifact);
+    }
 }
 
-/**
- * 执行说话块
- */
+export async function prepareTalkBlock(state: DirectorState, block: TalkBlock): Promise<void> {
+    for (const script of block.scripts) {
+        await prepareScriptLine(state, block.id, script);
+    }
+}
+
+export async function prepareTalkBlockBatched(state: DirectorState, block: TalkBlock): Promise<void> {
+    await prepareTalkBlock(state, block);
+}
+
+export async function prepareTalkBlockSingle(state: DirectorState, block: TalkBlock): Promise<void> {
+    await prepareTalkBlock(state, block);
+}
+
 export async function executeTalkBlock(
     state: DirectorState,
     block: TalkBlock,
@@ -118,32 +73,7 @@ export async function executeTalkBlock(
         }
     }
 
-    const batchAudioId = `${block.id}-batch`;
-    const batchAudioData = state.preparedAudio.get(batchAudioId);
-
-    if (batchAudioData) {
-        radioMonitor.log('DIRECTOR', `Playing batched audio for ${block.scripts.length} lines`, 'info');
-
-        radioMonitor.emitBatchScript(
-            block.scripts.map(script => ({
-                speaker: script.speaker,
-                text: script.text
-            })),
-            block.id
-        );
-
-        try {
-            await audioMixer.playVoice(batchAudioData);
-        } catch (e) {
-            console.warn('[Director] Batched voice playback failed:', e);
-        }
-
-        for (const script of block.scripts) {
-            globalState.addTopic(script.text.slice(0, 50), script.speaker);
-        }
-    } else {
-        await executeTalkBlockSingle(state, block, delay);
-    }
+    await executeTalkBlockSingle(state, block, delay);
 
     if (hadBackgroundMusic) {
         if (hadBackgroundMusic.action === 'fade') {
@@ -156,9 +86,6 @@ export async function executeTalkBlock(
     }
 }
 
-/**
- * 逐句播放（带 lookahead 预生成）
- */
 export async function executeTalkBlockSingle(
     state: DirectorState,
     block: TalkBlock,
@@ -169,24 +96,13 @@ export async function executeTalkBlockSingle(
 
     for (let i = 0; i < scripts.length; i++) {
         const script = scripts[i];
-        const audioId = `${block.id}-${script.speaker}-${script.text.slice(0, 20)}`;
+        const artifactId = getScriptArtifactId(block.id, script.speaker, script.text);
 
-        if (!state.preparedAudio.has(audioId)) {
-            const promise = (async () => {
-                try {
-                    const result = await ttsAgent.generateSpeech(
-                        script.text,
-                        script.speaker,
-                        { mood: script.mood, customStyle: script.voiceStyle, voiceName: script.voiceName }
-                    );
-                    if (result.success && result.audioData) {
-                        state.preparedAudio.set(audioId, result.audioData);
-                    }
-                } catch (e) {
-                    console.warn('[Director] Lookahead TTS failed:', e);
-                }
-            })();
-            lookaheadPromises.set(i, promise);
+        if (!state.preparedNarration.has(artifactId)) {
+            lookaheadPromises.set(
+                i,
+                prepareScriptLine(state, block.id, script)
+            );
         }
     }
 
@@ -197,32 +113,30 @@ export async function executeTalkBlockSingle(
 
         radioMonitor.emitScript(script.speaker, script.text, block.id);
 
-        const audioId = `${block.id}-${script.speaker}-${script.text.slice(0, 20)}`;
+        const artifactId = getScriptArtifactId(block.id, script.speaker, script.text);
         const pendingPromise = lookaheadPromises.get(i);
         if (pendingPromise) {
             await pendingPromise;
         }
 
-        const audioData = state.preparedAudio.get(audioId);
+        let artifact: NarrationArtifact | undefined = state.preparedNarration.get(artifactId);
 
-        if (audioData) {
-            try {
-                await audioMixer.playVoice(audioData);
-            } catch (e) {
-                console.warn('[Director] Voice playback failed, skipping:', e);
+        if (!isNarrationReady(artifact)) {
+            artifact = await narratorAgent.narrateSpeech(script.text, script.speaker, {
+                mood: script.mood,
+                customStyle: script.voiceStyle,
+                voiceName: script.voiceName,
+            });
+            if (artifact.success || artifact.mode === 'subtitle-timed') {
+                state.preparedNarration.set(artifactId, artifact);
             }
-        } else {
+        }
+
+        if (artifact) {
             try {
-                const result = await ttsAgent.generateSpeech(
-                    script.text,
-                    script.speaker,
-                    { mood: script.mood, customStyle: script.voiceStyle, voiceName: script.voiceName }
-                );
-                if (result.success && result.audioData) {
-                    await audioMixer.playVoice(result.audioData);
-                }
+                await playNarrationArtifact(artifact);
             } catch (e) {
-                console.warn('[Director] TTS error, continuing:', e);
+                console.warn('[Director] Narration playback failed:', e);
             }
         }
 
@@ -232,4 +146,11 @@ export async function executeTalkBlockSingle(
 
         globalState.addTopic(script.text.slice(0, 50), script.speaker);
     }
+}
+
+export function isTalkBlockPrepared(state: DirectorState, block: TalkBlock): boolean {
+    return block.scripts.every((script) => {
+        const artifactId = getScriptArtifactId(block.id, script.speaker, script.text);
+        return isNarrationReady(state.preparedNarration.get(artifactId));
+    });
 }

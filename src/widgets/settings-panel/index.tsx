@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, Save, Zap, CheckCircle, Loader2 } from "lucide-react";
 
 import { useSettingsPanel } from "./hooks/useSettingsPanel";
-import { APISettings, TTSSettings, PreloadSettings, UserPreferenceSettings, ExperienceSettings, DemoMaterialEditor, LocalStatsPanel } from "./ui";
+import { APISettings, NarratorSettings, PreloadSettings, UserPreferenceSettings, ExperienceSettings, DemoMaterialEditor, LocalStatsPanel } from "./ui";
 
 interface SettingsPanelProps {
     isOpen: boolean;
@@ -28,7 +28,7 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
         handleSave,
         handleTest,
         handleFetchModels,
-        handleTtsTest,
+        handleNarratorTest,
         handleSelectModel,
         setShowModelDropdown,
         handleCheckHealth,
@@ -91,12 +91,12 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                             />
 
                             {/* TTS Settings */}
-                            <TTSSettings
+                            <NarratorSettings
                                 settings={settings}
-                                ttsTestStatus={ttsTestStatus}
-                                ttsTestMessage={ttsTestMessage}
+                                narratorTestStatus={ttsTestStatus}
+                                narratorTestMessage={ttsTestMessage}
                                 onSettingChange={handleChange}
-                                onTtsTest={handleTtsTest}
+                                onNarratorTest={handleNarratorTest}
                             />
 
                             {/* Preload Settings */}

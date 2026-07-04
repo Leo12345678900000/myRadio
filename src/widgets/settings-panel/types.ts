@@ -11,6 +11,7 @@ export interface HealthItemState {
 export interface HealthCheckState {
     proxy: HealthItemState;
     officialBackend: HealthItemState;
+    edgeTts: HealthItemState;
     supabase: HealthItemState;
     ollama: HealthItemState;
 }
@@ -33,7 +34,7 @@ export interface SettingsPanelActions {
     handleSave: () => void;
     handleTest: () => Promise<void>;
     handleFetchModels: () => Promise<void>;
-    handleTtsTest: () => Promise<void>;
+    handleNarratorTest: () => Promise<void>;
     handleSelectModel: (model: string) => void;
     setShowModelDropdown: (show: boolean) => void;
     handleCheckHealth: () => Promise<void>;

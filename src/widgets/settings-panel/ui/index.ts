@@ -1,5 +1,5 @@
 export { default as APISettings } from './APISettings';
-export { default as TTSSettings } from './TTSSettings';
+export { default as NarratorSettings } from './NarratorSettings';
 export { default as PreloadSettings } from './PreloadSettings';
 export { default as ExperienceSettings } from './ExperienceSettings';
 export { default as DemoMaterialEditor } from './DemoMaterialEditor';

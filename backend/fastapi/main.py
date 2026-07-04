@@ -8,6 +8,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from tts_service import health_status, list_voices, synthesize_speech
+
 TIMEOUT_SECONDS = 15.0
 ALLOWED_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"}
 BLOCKED_HEADERS = {"host", "content-length", "connection", "accept-encoding"}
@@ -28,7 +30,15 @@ class OllamaGenerateRequest(BaseModel):
     ollama_base_url: str = Field(default="http://localhost:11434")
 
 
-app = FastAPI(title="Radio Agent Backend", version="0.1.0")
+class TtsSpeakRequest(BaseModel):
+    text: str = Field(..., min_length=1)
+    voice: str = Field(default="zh-CN-XiaoxiaoNeural")
+    rate: str = Field(default="+0%")
+    volume: str = Field(default="+0%")
+    pitch: str = Field(default="+0Hz")
+
+
+app = FastAPI(title="AetherWave Agent Backend", version="0.2.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -162,3 +172,40 @@ async def ollama_generate(payload: OllamaGenerateRequest) -> Any:
         "model": data.get("model", payload.model),
         "done": data.get("done", True),
     }
+
+
+@app.get("/api/tts/health")
+async def tts_health() -> Any:
+    try:
+        return await health_status()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"edge-tts unavailable: {exc}") from exc
+
+
+@app.get("/api/tts/voices")
+async def tts_voices(locale: str = "zh-CN") -> Any:
+    try:
+        voices = await list_voices(locale)
+        return {"voices": voices}
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Failed to list voices: {exc}") from exc
+
+
+@app.post("/api/tts/speak")
+async def tts_speak(payload: TtsSpeakRequest):
+    try:
+        audio = await synthesize_speech(
+            text=payload.text,
+            voice=payload.voice,
+            rate=payload.rate,
+            volume=payload.volume,
+            pitch=payload.pitch,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"edge-tts synthesis failed: {exc}") from exc
+
+    from fastapi.responses import Response
+
+    return Response(content=audio, media_type="audio/mpeg")

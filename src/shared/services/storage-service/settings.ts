@@ -5,7 +5,7 @@
 const STORAGE_KEY = "radio_nowhere_settings";
 
 export type ApiType = "openai" | "gemini" | "vertexai";
-export type TTSProvider = "gemini" | "microsoft";
+export type VoiceMode = "auto" | "edge" | "browser" | "subtitle-only";
 export type RuntimeMode = "demo" | "live";
 export type BackendRoute = "direct" | "proxy" | "official";
 export type OpenSourceLlmProvider = "none" | "ollama";
@@ -21,21 +21,28 @@ export interface IApiSettings {
     gcpProject: string;    // GCP Project ID
     gcpLocation: string;   // GCP Region (e.g., us-central1)
 
-    // TTS 独立配置
-    ttsProvider: TTSProvider;  // TTS 渠道: gemini 或 microsoft
-    ttsEndpoint: string;   // TTS API Endpoint (留空则使用官方)
-    ttsApiKey: string;     // TTS API Key (可以和主 key 不同)
-    ttsModel: string;      // TTS Model name
-    ttsVoice: string;      // 默认语音 (Gemini)
-    ttsUseVertex: boolean; // 是否在 TTS 时使用 Vertex AI 配置
+    // Narrator / 旁白配置
+    voiceMode: VoiceMode;
+    edgeTtsBackendUrl: string;
+    edgeTtsVoiceHost1: string;
+    edgeTtsVoiceHost2: string;
+    edgeTtsVoiceGuest: string;
+    browserSpeechEnabled: boolean;
+    browserSpeechRate: number;
 
-    // Microsoft TTS 配置
-    msTtsEndpoint: string;     // Microsoft TTS API 地址 (默认: https://tts.cjack.top)
-    msTtsVoice: string;        // Microsoft 音色全名
-    msTtsVolume: number;       // 音量 (0-100)
-    msTtsRate: number;         // 语速 (-10 to 10)
-    msTtsPitch: number;        // 音调 (-10 to 10)
-    msTtsAuthKey: string;      // 可选的 Bearer token
+    /** @deprecated Legacy fields kept for localStorage merge only */
+    ttsProvider?: "gemini" | "microsoft";
+    ttsEndpoint?: string;
+    ttsApiKey?: string;
+    ttsModel?: string;
+    ttsVoice?: string;
+    ttsUseVertex?: boolean;
+    msTtsEndpoint?: string;
+    msTtsVoice?: string;
+    msTtsVolume?: number;
+    msTtsRate?: number;
+    msTtsPitch?: number;
+    msTtsAuthKey?: string;
 
     // 播放配置
     preloadBlockCount: number;  // 提前准备的 block 数量 (推荐: 5)
@@ -65,20 +72,13 @@ export const DEFAULT_SETTINGS: IApiSettings = {
     apiType: "openai",
     gcpProject: "",
     gcpLocation: "us-central1",
-    // Gemini TTS
-    ttsProvider: "gemini",
-    ttsEndpoint: "",
-    ttsApiKey: "",
-    ttsModel: "gemini-2.5-flash-preview-tts",
-    ttsVoice: "Aoede",
-    ttsUseVertex: false,
-    // Microsoft TTS
-    msTtsEndpoint: "https://tts.cjack.top",
-    msTtsVoice: "Microsoft Server Speech Text to Speech Voice (zh-CN, XiaoxiaoNeural)",
-    msTtsVolume: 100,
-    msTtsRate: 0,
-    msTtsPitch: 0,
-    msTtsAuthKey: "",
+    voiceMode: "auto",
+    edgeTtsBackendUrl: "http://localhost:8000",
+    edgeTtsVoiceHost1: "zh-CN-XiaoxiaoNeural",
+    edgeTtsVoiceHost2: "zh-CN-YunxiNeural",
+    edgeTtsVoiceGuest: "zh-CN-XiaoyiNeural",
+    browserSpeechEnabled: true,
+    browserSpeechRate: 1,
     // 播放配置
     preloadBlockCount: 3,
     // 运行模式与后端路由
@@ -96,17 +96,17 @@ export const DEFAULT_SETTINGS: IApiSettings = {
     uiTheme: "dark",
 };
 
-// 可用的 TTS 语音列表
-export const TTS_VOICES = [
-    { name: 'Aoede', desc: '女声 · 清澈温柔' },
-    { name: 'Kore', desc: '女声 · 坚定专业' },
-    { name: 'Leda', desc: '女声 · 年轻活泼' },
-    { name: 'Despina', desc: '女声 · 温暖亲切' },
-    { name: 'Gacrux', desc: '男声 · 成熟稳重' },
-    { name: 'Charon', desc: '男声 · 专业播报' },
-    { name: 'Puck', desc: '中性 · 活泼开朗' },
-    { name: 'Sadachbia', desc: '男声 · 低沉有磁性' },
+// 可用的 edge-tts 中文音色（Settings 下拉）
+export const EDGE_TTS_VOICES = [
+    { name: 'zh-CN-XiaoxiaoNeural', desc: '女声 · 晓晓' },
+    { name: 'zh-CN-XiaoyiNeural', desc: '女声 · 晓伊' },
+    { name: 'zh-CN-YunxiNeural', desc: '男声 · 云希' },
+    { name: 'zh-CN-YunyangNeural', desc: '男声 · 云扬' },
+    { name: 'zh-CN-YunjianNeural', desc: '男声 · 云健' },
 ];
+
+/** @deprecated Use EDGE_TTS_VOICES */
+export const TTS_VOICES = EDGE_TTS_VOICES;
 
 /**
  * Get API settings from LocalStorage
@@ -130,20 +130,13 @@ export function getSettings(): IApiSettings {
             apiType: parsed.apiType ?? DEFAULT_SETTINGS.apiType,
             gcpProject: parsed.gcpProject ?? DEFAULT_SETTINGS.gcpProject,
             gcpLocation: parsed.gcpLocation ?? DEFAULT_SETTINGS.gcpLocation,
-            // Gemini TTS
-            ttsProvider: parsed.ttsProvider ?? DEFAULT_SETTINGS.ttsProvider,
-            ttsEndpoint: parsed.ttsEndpoint ?? DEFAULT_SETTINGS.ttsEndpoint,
-            ttsApiKey: parsed.ttsApiKey ?? DEFAULT_SETTINGS.ttsApiKey,
-            ttsModel: parsed.ttsModel ?? DEFAULT_SETTINGS.ttsModel,
-            ttsVoice: parsed.ttsVoice ?? DEFAULT_SETTINGS.ttsVoice,
-            ttsUseVertex: parsed.ttsUseVertex ?? DEFAULT_SETTINGS.ttsUseVertex,
-            // Microsoft TTS
-            msTtsEndpoint: parsed.msTtsEndpoint ?? DEFAULT_SETTINGS.msTtsEndpoint,
-            msTtsVoice: parsed.msTtsVoice ?? DEFAULT_SETTINGS.msTtsVoice,
-            msTtsVolume: parsed.msTtsVolume ?? DEFAULT_SETTINGS.msTtsVolume,
-            msTtsRate: parsed.msTtsRate ?? DEFAULT_SETTINGS.msTtsRate,
-            msTtsPitch: parsed.msTtsPitch ?? DEFAULT_SETTINGS.msTtsPitch,
-            msTtsAuthKey: parsed.msTtsAuthKey ?? DEFAULT_SETTINGS.msTtsAuthKey,
+            voiceMode: parsed.voiceMode ?? DEFAULT_SETTINGS.voiceMode,
+            edgeTtsBackendUrl: parsed.edgeTtsBackendUrl ?? DEFAULT_SETTINGS.edgeTtsBackendUrl,
+            edgeTtsVoiceHost1: parsed.edgeTtsVoiceHost1 ?? DEFAULT_SETTINGS.edgeTtsVoiceHost1,
+            edgeTtsVoiceHost2: parsed.edgeTtsVoiceHost2 ?? DEFAULT_SETTINGS.edgeTtsVoiceHost2,
+            edgeTtsVoiceGuest: parsed.edgeTtsVoiceGuest ?? DEFAULT_SETTINGS.edgeTtsVoiceGuest,
+            browserSpeechEnabled: parsed.browserSpeechEnabled ?? DEFAULT_SETTINGS.browserSpeechEnabled,
+            browserSpeechRate: parsed.browserSpeechRate ?? DEFAULT_SETTINGS.browserSpeechRate,
             // 播放配置
             preloadBlockCount: parsed.preloadBlockCount ?? DEFAULT_SETTINGS.preloadBlockCount,
             // 运行模式与后端路由

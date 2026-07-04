@@ -17,7 +17,7 @@ export {
     DEFAULT_SETTINGS,
     TTS_VOICES,
 } from './storage-service/settings';
-export type { IApiSettings, ApiType, TTSProvider, RuntimeMode, BackendRoute, OpenSourceLlmProvider, UITheme } from './storage-service/settings';
+export type { IApiSettings, ApiType, VoiceMode, RuntimeMode, BackendRoute, OpenSourceLlmProvider, UITheme } from './storage-service/settings';
 
 export { hasSession, getSession, clearSession } from './storage-service/session';
 

@@ -108,6 +108,9 @@ export default function APISettings({
                     <p className={statusTextClass(healthChecks.officialBackend.status)}>
                         Official Backend: {healthChecks.officialBackend.message}
                     </p>
+                    <p className={statusTextClass(healthChecks.edgeTts.status)}>
+                        Edge TTS: {healthChecks.edgeTts.message}
+                    </p>
                     <p className={statusTextClass(healthChecks.supabase.status)}>
                         Supabase: {healthChecks.supabase.message}
                     </p>

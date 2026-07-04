@@ -11,7 +11,7 @@ interface ApiBubble extends ApiCallEvent {
 
 const SERVICE_ICONS: Record<ApiCallEvent['service'], React.ReactNode> = {
     AI: <Cpu size={12} />,
-    TTS: <Mic2 size={12} />,
+    NARRATOR: <Mic2 size={12} />,
     Music: <Music size={12} />,
     Lyrics: <Radio size={12} />,
     Proxy: <Zap size={12} />,
@@ -19,7 +19,7 @@ const SERVICE_ICONS: Record<ApiCallEvent['service'], React.ReactNode> = {
 
 const SERVICE_COLORS: Record<ApiCallEvent['service'], string> = {
     AI: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-    TTS: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
+    NARRATOR: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
     Music: 'bg-pink-500/20 text-pink-400 border-pink-500/30',
     Lyrics: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
     Proxy: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',

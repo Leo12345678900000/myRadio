@@ -101,6 +101,25 @@ export async function checkSupabaseHealth(settings: IApiSettings): Promise<Healt
     }
 }
 
+export async function checkEdgeTtsHealth(settings: IApiSettings): Promise<HealthResult> {
+    const baseUrl = (settings.edgeTtsBackendUrl || settings.officialBackendUrl || 'http://localhost:8000').replace(/\/$/, '');
+
+    try {
+        const response = await withTimeout(fetch(`${baseUrl}/api/tts/health`), 8000);
+        if (!response.ok) {
+            const text = await response.text();
+            return fail(`HTTP ${response.status}: ${text.slice(0, 80)}`);
+        }
+        const data = await response.json() as { status?: string; voiceCount?: number };
+        if (data.status !== 'ok') {
+            return fail('Edge TTS unhealthy');
+        }
+        return ok(`edge-tts healthy (${data.voiceCount ?? 0} voices)`);
+    } catch (error) {
+        return fail(`Edge TTS failed: ${String(error)}`);
+    }
+}
+
 export async function checkOllamaHealth(settings: IApiSettings): Promise<HealthResult> {
     if (settings.openSourceLlmProvider !== "ollama") {
         return fail("Ollama provider not enabled");

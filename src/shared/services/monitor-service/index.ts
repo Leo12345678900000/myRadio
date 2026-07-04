@@ -5,7 +5,7 @@
 
 import { ShowTimeline } from '@shared/types/radio-core';
 
-export type AgentType = 'DIRECTOR' | 'WRITER' | 'TTS' | 'MIXER';
+export type AgentType = 'DIRECTOR' | 'WRITER' | 'NARRATOR' | 'MIXER';
 
 export interface AgentStatus {
     agent: AgentType;
@@ -44,7 +44,7 @@ export interface LogEvent {
 
 export interface ApiCallEvent {
     id: string;
-    service: 'AI' | 'TTS' | 'Music' | 'Lyrics' | 'Proxy';
+    service: 'AI' | 'NARRATOR' | 'Music' | 'Lyrics' | 'Proxy';
     action: string;           // 如 "Generate Timeline", "Synthesize Voice"
     status: 'pending' | 'success' | 'error';
     timestamp: number;

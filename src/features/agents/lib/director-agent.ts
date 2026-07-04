@@ -15,7 +15,7 @@ import {
     PlayerState
 } from '@shared/types/radio-core';
 import { writerAgent } from '@features/content/lib/writer-agent';
-import { ttsAgent } from '@features/tts/lib/tts-agent';
+import { narratorAgent } from '@features/narrator';
 import { audioMixer } from '@shared/services/audio-service/mixer';
 import { globalState } from '@shared/stores/global-state';
 import { radioMonitor } from '@shared/services/monitor-service';
@@ -65,7 +65,7 @@ export class DirectorAgent {
         this.state.isRunning = true;
         this.state.currentSessionId++;
         const sessionId = this.state.currentSessionId;
-        ttsAgent.reset();
+        narratorAgent.reset();
 
         if (options) {
             this.state.context = {
@@ -91,10 +91,10 @@ export class DirectorAgent {
         this.state.isRunning = false;
         PreloadManager.stopPreloadWorker(this.preloadWorkerRef);
         audioMixer.stopAll();
-        ttsAgent.abort();
+        narratorAgent.abort();
         timeAnnouncementService.stop();
         this.state.context = null;
-        this.state.preparedAudio.clear();
+        this.state.preparedNarration.clear();
         this.state.musicDataCache.clear();
         this.state.musicCoverCache.clear();
         this.state.isPreparing.clear();
@@ -103,7 +103,7 @@ export class DirectorAgent {
         globalState.reset();
         radioMonitor.updateStatus('DIRECTOR', 'IDLE', 'Disconnected');
         radioMonitor.updateStatus('WRITER', 'IDLE', 'Disconnected');
-        radioMonitor.updateStatus('TTS', 'IDLE', 'Disconnected');
+        radioMonitor.updateStatus('NARRATOR', 'IDLE', 'Disconnected');
         radioMonitor.updateStatus('MIXER', 'IDLE', 'Disconnected');
     }
 
@@ -223,7 +223,7 @@ export class DirectorAgent {
                     await this.delay(200);
 
                     // 清空旧节目的 TTS 缓存，防止音频串用
-                    this.state.preparedAudio.clear();
+                    this.state.preparedNarration.clear();
                     radioMonitor.log('DIRECTOR', 'Cleared TTS cache for new program', 'trace');
 
                     radioMonitor.log('DIRECTOR', 'Playing transition music...', 'info');
@@ -241,7 +241,7 @@ export class DirectorAgent {
                     audioMixer.setMusicVolume(AUDIO.MUSIC_DEFAULT_VOLUME);
 
                     // 清空旧节目的 TTS 缓存，防止音频串用
-                    this.state.preparedAudio.clear();
+                    this.state.preparedNarration.clear();
 
                     const pendingMail = mailQueue.getNext();
                     currentTimeline = await this.generateMainTimeline(undefined, pendingMail?.content);
@@ -309,7 +309,7 @@ export class DirectorAgent {
 
         const cast = writerAgent.getCurrentCast();
         if (cast) {
-            ttsAgent.setActiveCast(cast);
+            narratorAgent.setActiveCast(cast);
         }
 
         if (broadcast) {

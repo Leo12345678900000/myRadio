@@ -7,21 +7,14 @@ import { TalkBlock, MusicBlock, TimelineBlock, ShowTimeline } from '@shared/type
 import { getSettings } from '@shared/services/storage-service/settings';
 import { radioMonitor } from '@shared/services/monitor-service';
 import { DirectorState } from './director-types';
+import { isTalkBlockPrepared } from './talk-executor';
 
 /**
  * 检查块是否已准备好
  */
 export function isBlockPrepared(state: DirectorState, block: TimelineBlock): boolean {
     if (block.type === 'talk') {
-        const talkBlock = block as TalkBlock;
-        // 检查批量模式（1-2 说话者）
-        const batchAudioId = `${block.id}-batch`;
-        if (state.preparedAudio.has(batchAudioId)) return true;
-        // 检查分句模式（所有脚本都已准备）
-        return talkBlock.scripts.every(script => {
-            const audioId = `${block.id}-${script.speaker}-${script.text.slice(0, 20)}`;
-            return state.preparedAudio.has(audioId);
-        });
+        return isTalkBlockPrepared(state, block as TalkBlock);
     } else if (block.type === 'music') {
         const musicBlock = block as MusicBlock;
         return state.musicDataCache.has(musicBlock.search);
@@ -103,7 +96,7 @@ export function startPreloadWorker(
         }
 
         const preparedCount = countPreparedBlocks(state, currentBlockIndex, endIndex);
-        radioMonitor.updateStatus('TTS', 'READY', `Buffer: ${preparedCount}/${preloadCount}`);
+        radioMonitor.updateStatus('NARRATOR', 'READY', `Buffer: ${preparedCount}/${preloadCount}`);
     }, WORKER_INTERVAL_MS);
 
     radioMonitor.log('DIRECTOR', 'Preload worker started', 'info');

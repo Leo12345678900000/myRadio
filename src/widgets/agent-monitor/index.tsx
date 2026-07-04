@@ -17,7 +17,7 @@ export default function AgentMonitor() {
     const [agents, setAgents] = useState<Record<AgentType, AgentState>>({
         WRITER: { status: 'IDLE' },
         DIRECTOR: { status: 'IDLE' },
-        TTS: { status: 'IDLE' },
+        NARRATOR: { status: 'IDLE' },
         MIXER: { status: 'IDLE' }
     });
     const [logs, setLogs] = useState<LogEvent[]>([]);
@@ -139,7 +139,7 @@ export default function AgentMonitor() {
 
             {/* Agents Status - always visible */}
             <div className="px-3 py-2 border-b border-neutral-800 space-y-1.5">
-                {(['WRITER', 'DIRECTOR', 'TTS'] as AgentType[]).map(agent => (
+                {(['WRITER', 'DIRECTOR', 'NARRATOR'] as AgentType[]).map(agent => (
                     <div key={agent} className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                             {getStatusIcon(agents[agent].status)}

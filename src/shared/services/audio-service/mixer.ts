@@ -65,6 +65,13 @@ function writeString(view: DataView, offset: number, str: string): void {
     }
 }
 
+function isMp3Data(audioData: ArrayBuffer): boolean {
+    if (audioData.byteLength < 3) return false;
+    const bytes = new Uint8Array(audioData);
+    if (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) return true;
+    return bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0;
+}
+
 // ================== Audio Mixer Class ==================
 
 export class AudioMixer {
@@ -255,6 +262,67 @@ export class AudioMixer {
      * Gemini TTS 返回 PCM 格式，需要转换为 WAV
      */
     async playVoice(audioData: ArrayBuffer): Promise<void> {
+        if (isMp3Data(audioData)) {
+            return this.playVoiceMp3(audioData);
+        }
+        return this.playVoicePcm(audioData);
+    }
+
+    async playVoiceMp3(audioData: ArrayBuffer): Promise<void> {
+        if (!audioData || audioData.byteLength < 100) {
+            console.warn('[AudioMixer] Invalid MP3 data, skipping playback');
+            return;
+        }
+
+        if (this.voiceHowl) {
+            this.voiceHowl.stop();
+            this.voiceHowl.unload();
+            this.voiceHowl = null;
+        }
+
+        await new Promise(r => setTimeout(r, 200));
+
+        return new Promise((resolve) => {
+            try {
+                const blob = new Blob([audioData], { type: 'audio/mpeg' });
+                const url = URL.createObjectURL(blob);
+
+                this.voiceResolve = () => {
+                    URL.revokeObjectURL(url);
+                    resolve();
+                };
+
+                this.voiceHowl = new Howl({
+                    src: [url],
+                    format: ['mp3'],
+                    volume: this.voiceVolume,
+                    onend: () => {
+                        setTimeout(() => {
+                            this.voiceResolve?.();
+                            this.voiceResolve = null;
+                        }, 300);
+                    },
+                    onstop: () => {
+                        this.voiceResolve?.();
+                        this.voiceResolve = null;
+                    },
+                    onloaderror: (_, error) => {
+                        URL.revokeObjectURL(url);
+                        console.warn('[AudioMixer] MP3 decode failed, skipping:', error);
+                        this.voiceResolve = null;
+                        resolve();
+                    }
+                });
+
+                this.voiceHowl.play();
+            } catch (e) {
+                console.warn('[AudioMixer] MP3 playback failed:', e);
+                resolve();
+            }
+        });
+    }
+
+    private async playVoicePcm(audioData: ArrayBuffer): Promise<void> {
         // 验证音频数据
         if (!audioData || audioData.byteLength < 100) {
             console.warn('[AudioMixer] Invalid audio data, skipping playback');
