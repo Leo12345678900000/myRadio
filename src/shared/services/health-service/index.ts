@@ -1,4 +1,5 @@
 import { IApiSettings } from "@shared/services/storage-service/settings";
+import { normalizeSupabaseBaseUrl } from "@shared/services/supabase-service";
 
 export type HealthStatus = "ok" | "error";
 
@@ -80,7 +81,7 @@ export async function checkSupabaseHealth(settings: IApiSettings): Promise<Healt
     }
 
     try {
-        const baseUrl = settings.supabaseUrl.replace(/\/$/, "");
+        const baseUrl = normalizeSupabaseBaseUrl(settings.supabaseUrl);
         const response = await withTimeout(
             fetch(`${baseUrl}/rest/v1/agent_sessions?select=session_id&limit=1`, {
                 headers: {

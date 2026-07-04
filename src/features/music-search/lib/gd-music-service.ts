@@ -54,6 +54,27 @@ interface LyricAPIResponse {
     tlyric?: string;
 }
 
+async function fetchMusicApi(url: string): Promise<Response> {
+    try {
+        const direct = await fetch(url);
+        if (direct.ok) {
+            return direct;
+        }
+    } catch {
+        // Direct fetch failed (network/CORS) — fall back to local proxy.
+    }
+
+    return fetch("/api/proxy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            url,
+            method: "GET",
+            headers: { Accept: "application/json" },
+        }),
+    });
+}
+
 // ================== API Functions ==================
 
 /**
@@ -72,7 +93,7 @@ export async function searchMusic(
     try {
         const url = `${API_BASE}?types=search&source=${source}&name=${encodeURIComponent(keyword)}&count=${count}&pages=${pages}`;
 
-        const response = await fetch(url);
+        const response = await fetchMusicApi(url);
         if (!response.ok) {
             console.error("GD Music Search Error:", response.status);
             return [];
@@ -114,7 +135,7 @@ export async function getMusicUrl(
     try {
         const url = `${API_BASE}?types=url&source=${source}&id=${trackId}&br=${br}`;
 
-        const response = await fetch(url);
+        const response = await fetchMusicApi(url);
         if (!response.ok) {
             console.error("GD Music URL Error:", response.status);
             return null;
@@ -142,7 +163,7 @@ export async function getAlbumArt(
     try {
         const url = `${API_BASE}?types=pic&source=${source}&id=${picId}&size=${size}`;
 
-        const response = await fetch(url);
+        const response = await fetchMusicApi(url);
         if (!response.ok) {
             console.error("GD Music Pic Error:", response.status);
             return null;
@@ -168,7 +189,7 @@ export async function getLyrics(
     try {
         const url = `${API_BASE}?types=lyric&source=${source}&id=${lyricId}`;
 
-        const response = await fetch(url);
+        const response = await fetchMusicApi(url);
         if (!response.ok) {
             console.error("GD Music Lyric Error:", response.status);
             return null;

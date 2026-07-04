@@ -1,5 +1,11 @@
 import { getSettings } from "@shared/services/storage-service/settings";
 
+export function normalizeSupabaseBaseUrl(raw: string): string {
+    let url = raw.trim().replace(/\/$/, "");
+    url = url.replace(/\/rest\/v1\/?$/i, "");
+    return url;
+}
+
 export interface SupabaseSessionRecord {
     session_id: string;
     runtime_mode: string;
@@ -27,7 +33,7 @@ export async function upsertSessionRecord(record: SupabaseSessionRecord): Promis
     if (!isSupabaseConfigured()) return;
 
     const settings = getSettings();
-    const baseUrl = settings.supabaseUrl.replace(/\/$/, "");
+    const baseUrl = normalizeSupabaseBaseUrl(settings.supabaseUrl);
     const endpoint = `${baseUrl}/rest/v1/agent_sessions?on_conflict=session_id`;
 
     const response = await fetch(endpoint, {
@@ -49,7 +55,7 @@ export async function listRecentSessionRecords(limit = 5): Promise<SupabaseSessi
     if (!isSupabaseConfigured()) return [];
 
     const settings = getSettings();
-    const baseUrl = settings.supabaseUrl.replace(/\/$/, "");
+    const baseUrl = normalizeSupabaseBaseUrl(settings.supabaseUrl);
     const endpoint = `${baseUrl}/rest/v1/agent_sessions?select=session_id,runtime_mode,current_block_index,playback_position,timeline_snapshot,saved_at&order=saved_at.desc&limit=${limit}`;
 
     const response = await fetch(endpoint, {
